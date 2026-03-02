@@ -1,0 +1,264 @@
+[
+  {
+    "paper_id": "12021iclr",
+    "title": "2021ICLR",
+    "source_filename": "2021ICLR.pdf",
+    "created_at": "2026-02-10T06:05:06.705474+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "Time Series"
+    ]
+  },
+  {
+    "paper_id": "120222021iclr",
+    "title": "2021ICLR",
+    "source_filename": "2021ICLR.pdf",
+    "created_at": "2026-02-10T06:39:20.751641+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "Time Series"
+    ]
+  },
+  {
+    "paper_id": "1.√2017arXivBlend",
+    "title": "√2017arXivBlend",
+    "source_filename": "√2017arXivBlend.pdf",
+    "created_at": "2026-02-10T07:09:01.570246+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "Time Series"
+    ]
+  },
+  {
+    "paper_id": "2.2025ICCVBadVideo Stealthy Backdoor Attack against Text-to-Video Generation",
+    "title": "2025ICCVBadVideo Stealthy Backdoor Attack against Text-to-Video Generation",
+    "source_filename": "2025ICCVBadVideo Stealthy Backdoor Attack against Text-to-Video Generation.pdf",
+    "created_at": "2026-02-10T07:30:50.269513+00:00",
+    "target_language": "中文",
+    "summary_template": "tinghua.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "General",
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "Time Series",
+      "NLP"
+    ]
+  },
+  {
+    "paper_id": "3.2024ICLRRethinking Backdoor Attacks on Dataset Distillation A Kernel Method Perspective",
+    "title": "2024ICLRRethinking Backdoor Attacks on Dataset Distillation A Kernel Method Perspective",
+    "source_filename": "2024ICLRRethinking Backdoor Attacks on Dataset Distillation A Kernel Method Perspective.pdf",
+    "created_at": "2026-02-10T08:15:26.222451+00:00",
+    "target_language": "中文",
+    "summary_template": "tinghua.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "General",
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "Time Series",
+      "NLP"
+    ]
+  },
+  {
+    "paper_id": "4.Mind the Cost of Scaffold! Benign Clients May Even Become Accomplices of Backdoor Attack",
+    "title": "Mind the Cost of Scaffold! Benign Clients May Even Become Accomplices of Backdoor Attack",
+    "source_filename": "2025ICCVMind the Cost of Scaffold Benign Clients May Even Become Accomlicies of Backdoor Attack.pdf",
+    "created_at": "2026-02-10T08:15:38.317380+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "NLP"
+    ]
+  },
+  {
+    "paper_id": "5.2025CVPRTest-time Backdoor Detection for Objecet Detection Models",
+    "title": "2025CVPRTest-time Backdoor Detection for Objecet Detection Models",
+    "source_filename": "2025CVPRTest-time Backdoor Detection for Objecet Detection Models.pdf",
+    "created_at": "2026-02-11T14:03:03.574108+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "NLP"
+    ]
+  },
+  {
+    "paper_id": "6.Selection_Aware_Poisoning__Boosting_Clean_Label_Backdoor_Attacks_via_Distribution_Deviation_and_Projection_Residual_Metrics",
+    "title": "Selection_Aware_Poisoning__Boosting_Clean_Label_Backdoor_Attacks_via_Distribution_Deviation_and_Projection_Residual_Metrics",
+    "source_filename": "Selection_Aware_Poisoning__Boosting_Clean_Label_Backdoor_Attacks_via_Distribution_Deviation_and_Projection_Residual_Metrics.pdf",
+    "created_at": "2026-02-25T07:21:51.062648+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "NLP"
+    ]
+  },
+  {
+    "paper_id": "7.2025ICLRWicked Oddities Selectively Poisoning for Effective Clean-Label Backdoor Attacks",
+    "title": "2025ICLRWicked Oddities Selectively Poisoning for Effective Clean-Label Backdoor Attacks",
+    "source_filename": "2025ICLRWicked Oddities Selectively Poisoning for Effective Clean-Label Backdoor Attacks.pdf",
+    "created_at": "2026-02-26T02:30:38.932340+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "NLP"
+    ]
+  },
+  {
+    "paper_id": "8.2025ICCVBadVideo Stealthy Backdoor Attack against Text-to-Video Generation",
+    "title": "2025ICCVBadVideo Stealthy Backdoor Attack against Text-to-Video Generation",
+    "source_filename": "2025ICCVBadVideo Stealthy Backdoor Attack against Text-to-Video Generation.pdf",
+    "created_at": "2026-02-27T02:34:44.635616+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "Time Series",
+      "NLP"
+    ]
+  },
+  {
+    "paper_id": "9.2022IJCAIData-Efficient Backdoor Attacks",
+    "title": "2022IJCAIData-Efficient Backdoor Attacks",
+    "source_filename": "2022IJCAIData-Efficient Backdoor Attacks.pdf",
+    "created_at": "2026-02-27T05:21:00.040047+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision"
+    ]
+  },
+  {
+    "paper_id": "10.Not All Samples Are Born Equal Towards Effective Clean-Label Backdoor Attacks",
+    "title": "Not All Samples Are Born Equal: Towards Effective Clean-Label Backdoor Attacks",
+    "source_filename": "Not All Samples are born equal.pdf",
+    "created_at": "2026-02-27T05:27:37.298111+00:00",
+    "target_language": "中文",
+    "summary_template": "tinghua.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "General",
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "NLP"
+    ]
+  },
+  {
+    "paper_id": "11.Not All Samples Are Born Equal Towards Effective Clean-Label Backdoor Attacks",
+    "title": "Not All Samples Are Born Equal: Towards Effective Clean-Label Backdoor Attacks",
+    "source_filename": "Not All Samples are born equal.pdf",
+    "created_at": "2026-02-27T05:27:45.746213+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "NLP"
+    ]
+  },
+  {
+    "paper_id": "12.Temporal-Distributed Backdoor Attack Against Video Based Action Recognition",
+    "title": "Temporal-Distributed Backdoor Attack Against Video Based Action Recognition",
+    "source_filename": "Temporal-Distributed Backdoor Attack Against Video Based Action Recognition.pdf",
+    "created_at": "2026-02-27T05:42:43.176603+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "Time Series",
+      "NLP"
+    ]
+  },
+  {
+    "paper_id": "13.MTAttack Multi-Target Backdoor Attacks against Large Vision-Language Models",
+    "title": "MTAttack: Multi-Target Backdoor Attacks against Large Vision-Language Models",
+    "source_filename": "2026AAAI_MTAttack multi target backdoor attacks against large vision language models.pdf",
+    "created_at": "2026-03-02T03:16:55.179333+00:00",
+    "target_language": "中文",
+    "summary_template": "backdoor_attacks.md",
+    "status": "completed",
+    "year": 2026,
+    "authors": [],
+    "domain_tags": [
+      "Backdoor Attack",
+      "Backdoor Defense",
+      "Computer Vision",
+      "Time Series",
+      "NLP"
+    ]
+  }
+]

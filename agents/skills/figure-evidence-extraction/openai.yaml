@@ -1,0 +1,31 @@
+{
+  "tool": {
+    "type": "function",
+    "function": {
+      "name": "figure_extraction_tool",
+      "description": "Extract figure/table evidence snippets related to a keyword.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Figure/table topic keyword."
+          },
+          "top_k": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Maximum number of snippets."
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      }
+    }
+  },
+  "runtime": {
+    "entrypoint": "figure_extraction.py",
+    "callable": "run"
+  }
+}
