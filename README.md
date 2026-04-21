@@ -47,6 +47,7 @@ python -m venv .venv
 pip install -r requirements.txt
 # Start service
 python main.py
+```
 
 > Backend runs at: http://127.0.0.1:8000
 
@@ -57,7 +58,7 @@ cd frontend
 npm install
 # Start development server
 npm run dev
-
+```
 > Frontend runs at: http://127.0.0.1:5173
 
 Developed with ❤️ by ByteTitan-star
