@@ -7,7 +7,7 @@ from .agent_skills import SkillRegistry
 
 settings = get_settings()
 backend_root = Path(__file__).resolve().parent.parent  # backend/app/dependencies.py -> backend/
-project_root = backend_root.parent                     # backend/ -> 5git-AgentPaperDistiller/
+app_root = Path(__file__).resolve().parent             # backend/app/
 
 storage = Storage(
     base_dir=backend_root / settings.data_dir,
@@ -21,7 +21,7 @@ storage = Storage(
 broker = TaskBroker()
 
 skill_registry = SkillRegistry(
-    skills_root=project_root / settings.agent_skills_dir,
+    skills_root=app_root / settings.agent_skills_dir,
     vector_db_dir=backend_root / settings.data_dir / settings.vector_db_subdir,
     embedding_model_name=settings.embedding_model_name,
     provider=settings.vector_store_provider,

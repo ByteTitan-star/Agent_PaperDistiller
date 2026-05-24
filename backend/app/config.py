@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # Agent tool calling
     agent_enable_tools: bool = True
     agent_max_tool_rounds: int = 4
-    agent_skills_dir: str = "agents/skills"
+    agent_skills_dir: str = "skills"  # relative to backend/app/
     skills_collection_name: str = "skills_collection"
     skill_retrieval_top_k: int = 5
 
@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     react_enable_clarification: bool = True
 
     # Database
-    DATABASE_URL: str = "mysql+aiomysql://root:root223@localhost:3306/AgentPaperDistriller"
+    DATABASE_URL: str = "mysql+asyncmy://root:root223@localhost:3306/AgentPaperDistriller"
 
     # Security
     SECRET_KEY: str = "change-me-in-production-use-a-long-random-string"

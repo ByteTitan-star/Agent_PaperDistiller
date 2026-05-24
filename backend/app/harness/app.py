@@ -51,7 +51,7 @@ class AppHarness:
             return
 
         backend_root = Path(__file__).resolve().parents[2]
-        project_root = backend_root.parent
+        app_root = Path(__file__).resolve().parents[1]
 
         # 1. Core services (existing)
         self.storage = Storage(
@@ -67,7 +67,7 @@ class AppHarness:
 
         # 2. Skill registry (existing)
         self.skill_registry = SkillRegistry(
-            skills_root=project_root / self.settings.agent_skills_dir,
+            skills_root=app_root / self.settings.agent_skills_dir,
             vector_db_dir=backend_root / self.settings.data_dir / self.settings.vector_db_subdir,
             embedding_model_name=self.settings.embedding_model_name,
             provider=self.settings.vector_store_provider,

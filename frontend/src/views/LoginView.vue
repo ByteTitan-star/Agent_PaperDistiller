@@ -108,6 +108,7 @@ const handleRegister = async () => {
   justify-content: center;
   min-height: 100vh;
   padding: 24px;
+  margin-top: -80px;
 }
 
 .login-card {
