@@ -1,0 +1,34 @@
+# AI工具的完整配置
+# 包括工具描述（AI prompt） 和运行配置
+
+{
+  "tool": { # AI 读这部分：理解"这是什么工具、怎么用"
+    "type": "function",  # 函数工具
+    "function": {
+      "name": "arxiv_search_tool",
+      "description": "Search arXiv papers for related methods and comparison references.",
+      "parameters": {  # 定义调用时需要传什么参数
+        "type": "object",
+        "properties": {
+          "query": {  # 必填：搜索关键词
+            "type": "string",
+            "description": "Search query text."
+          },
+          "max_results": {  # 可选：返回几篇论文（1-5篇）
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Maximum number of papers to return."
+          }
+        },
+        "required": [   # 只有 query 是必填的
+          "query"
+        ]
+      }
+    }
+  },
+  "runtime": { # 系统读这部分：知道"代码在哪、怎么执行"
+    "entrypoint": "arxiv_search.py",  # 文件
+    "callable": "run"  # 执行这个函数
+  }
+}

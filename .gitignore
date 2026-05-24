@@ -1,0 +1,31 @@
+# Environment files
+.env.prod
+.env.dev
+.env.test
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Data
+backend/data/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Claude
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

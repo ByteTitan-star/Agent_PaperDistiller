@@ -1,0 +1,25 @@
+tool:
+  type: function
+  function:
+    name: web_search
+    description: "Search the web for information using Tavily. Returns top results with titles, URLs, and content snippets. Use this when you need current information, recent research, or facts not available in the paper."
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "Search query string"
+        max_results:
+          type: integer
+          description: "Number of results to return (1-5)"
+          default: 3
+        search_depth:
+          type: string
+          description: "basic for quick results, advanced for deeper analysis"
+          enum: ["basic", "advanced"]
+          default: "basic"
+      required:
+        - query
+runtime:
+  entrypoint: web_search.py
+  callable: run
