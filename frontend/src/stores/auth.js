@@ -22,11 +22,8 @@ export const useAuthStore = defineStore("auth", {
     },
 
     async register(email, username, password) {
-      const { data } = await apiRegister({ email, username, password });
-      this.token = data.access_token;
-      this.user = data.user;
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      await apiRegister({ email, username, password });
+      // 注册后不发 token，需邮箱验证后才能登录
     },
 
     async fetchMe() {

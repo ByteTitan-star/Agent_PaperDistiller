@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Enum,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -77,7 +78,7 @@ class Paper(Base, TimestampMixin):
     pdf_path: Mapped[str | None] = mapped_column(String(1000), default=None)
     output_dir: Mapped[str | None] = mapped_column(String(1000), default=None)
 
-    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     owner = relationship("User", back_populates="papers")
@@ -120,7 +121,7 @@ class UserApiConfig(Base):
     __tablename__ = "user_api_configs"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
     deepseek_api_key: Mapped[str | None] = mapped_column(String(500), default=None)
     deepseek_base_url: Mapped[str | None] = mapped_column(String(500), default=None)
     qwen_api_key: Mapped[str | None] = mapped_column(String(500), default=None)
@@ -161,7 +162,7 @@ class ChatSession(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     paper_id: Mapped[str] = mapped_column(String(100), nullable=False)
 
     user = relationship("User", back_populates="chat_sessions")
@@ -177,7 +178,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    session_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    session_id: Mapped[str] = mapped_column(ForeignKey("chat_sessions.session_id"), nullable=False)
     role: Mapped[str] = mapped_column(
         Enum("user", "assistant", "system", name="chat_role_enum"), nullable=False
     )

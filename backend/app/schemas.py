@@ -92,6 +92,23 @@ class SystemInfoResponse(BaseModel):
 
 # ==================== Auth Schemas ====================
 
+class SendCodeRequest(BaseModel):
+    email: EmailStr
+    username: str = Field(min_length=2, max_length=100)
+
+
+class VerifyCodeRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+
+
+class RegisterFinal(BaseModel):
+    email: EmailStr
+    username: str = Field(min_length=2, max_length=100)
+    password: str = Field(min_length=6, max_length=128)
+    code: str = Field(min_length=6, max_length=6)
+
+
 class UserRegister(BaseModel):
     email: EmailStr
     username: str = Field(min_length=2, max_length=100)

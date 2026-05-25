@@ -10,9 +10,9 @@
       </div>
 
       <div class="model-tags">
-        <span class="tag">生成模型 / {{ generationModel }}</span>
-        <span class="tag">评估模型 / {{ evaluationModel }}</span>
-        <span class="tag active-mode">多智能体模式</span> </div>
+        <span class="tag">{{ generationModel }} / {{ evaluationModel }}</span>
+        <span class="tag active-mode">Multi-Agent</span>
+      </div>
 
       <nav class="links">
         <RouterLink to="/" class="link">解析工作台</RouterLink>
@@ -20,11 +20,12 @@
         <RouterLink v-if="authStore.isLoggedIn" to="/settings" class="link">设置</RouterLink>
         <RouterLink v-if="authStore.isAdmin" to="/admin" class="link">管理</RouterLink>
 
-        <el-popover placement="bottom-end" :width="320" trigger="hover">
+        <span class="nav-divider" />
+
+        <el-popover placement="bottom-end" :width="300" trigger="hover">
           <template #reference>
-            <span class="link version-trigger" title="版本信息">
-              <el-icon><InfoFilled /></el-icon>
-              {{ systemStore.info.app_version }}
+            <span class="link version-trigger">
+              <el-icon :size="13"><InfoFilled /></el-icon>
             </span>
           </template>
           <div class="version-card">
@@ -33,14 +34,14 @@
               <span class="vc-date">{{ systemStore.info.app_update_date }}</span>
             </div>
             <div class="vc-author">作者：{{ systemStore.info.app_author }}</div>
-            <el-divider style="margin: 10px 0" />
+            <el-divider style="margin: 8px 0" />
             <div class="vc-changelog">{{ systemStore.info.app_changelog }}</div>
           </div>
         </el-popover>
 
         <template v-if="authStore.isLoggedIn">
-          <span class="link user-info">{{ authStore.user?.username }}</span>
-          <span class="link logout-link" @click="handleLogout">退出</span>
+          <span class="user-name">{{ authStore.user?.username }}</span>
+          <span class="logout-btn" @click="handleLogout">退出</span>
         </template>
         <RouterLink v-else to="/login" class="link">登录</RouterLink>
       </nav>
@@ -122,54 +123,66 @@ onMounted(() => { if (!systemStore.loaded) systemStore.fetchInfo(); });
 
 .model-tags {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .tag {
-  padding: 6px 12px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
 }
 
 .tag.active-mode {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.1), rgba(236, 72, 153, 0.1));
-  color: #9333ea;
-  border-color: rgba(168, 85, 247, 0.2);
+  background: rgba(168, 85, 247, 0.08);
+  color: #7c3aed;
 }
 
 .links {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
 }
 
 .link {
   text-decoration: none;
-  padding: 8px 20px;
-  border-radius: 100px;
+  padding: 6px 14px;
+  border-radius: 8px;
   color: var(--text-muted);
   font-weight: 500;
-  transition: all 0.3s ease;
+  font-size: 13px;
+  transition: all 0.2s ease;
 }
 
-.link:hover { color: var(--text-main); background: rgba(255, 255, 255, 0.5); }
+.link:hover { color: var(--text-main); background: rgba(255, 255, 255, 0.4); }
 
 .link.router-link-active {
-  background: #ffffff;
-  color: var(--text-main);
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  color: #7c3aed;
+  background: rgba(168, 85, 247, 0.06);
+  font-weight: 600;
+}
+
+.nav-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.1);
+  margin: 0 4px;
 }
 
 .version-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
   color: #9333ea;
   cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.version-trigger:hover {
+  background: rgba(168, 85, 247, 0.08);
 }
 
 .version-card {
@@ -205,20 +218,24 @@ onMounted(() => { if (!systemStore.loaded) systemStore.fetchInfo(); });
   line-height: 1.7;
 }
 
-.user-info {
-  font-size: 12px;
-  color: #0f172a;
+.user-name {
+  font-size: 13px;
+  color: #334155;
   font-weight: 600;
-  cursor: default;
+  padding: 0 6px;
 }
 
-.logout-link {
-  cursor: pointer;
+.logout-btn {
   font-size: 12px;
-  color: #dc2626;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
 }
 
-.logout-link:hover {
-  background: rgba(220, 38, 38, 0.08);
+.logout-btn:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.06);
 }
 </style>
