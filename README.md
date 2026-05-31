@@ -64,4 +64,58 @@ npm run dev
 
 > 前端服务默认运行在：`http://127.0.0.1:5173`
 
+
+## 📋 更新日志
+
+### v2.1（2026-05-31）
+
+本次版本更新引入了以下核心改动：
+
+**深度搜索重构**
+- 替换手写 ReActEngine 为 LangGraph `create_react_agent`，通过 LangChain 原生 Tool Calling 驱动多轮搜索
+- 来源链接在推理过程中动态推送（非末尾拼接），支持点击跳转
+- 答案流式输出 + 思考链可视化
+- 关键词快速匹配兜底层（天气/新闻/GitHub 等绕过语义匹配），解决纯英文嵌入模型对中文 query 的语义鸿沟
+- 相似度阈值从硬编码 0.8 降至可配置 0.4
+
+**对话历史持久化**
+- ChatSession / ChatMessage ORM 模型接入，支持会话创建、消息保存、历史加载
+- 上下文智能管理：短历史全保留，长历史自动压缩为摘要（最近 10 条完整 + 旧消息提取用户问题列表）
+- 深度搜索模式也能感知对话历史
+- 新增 Chat History API（列出会话 / 获取消息 / 删除会话）
+
+**Token 统计修复**
+- 彻底解决 `token_usage_logs` 表写入为 0 的问题
+- 删除 fire-and-forget 模式的 `_log_chat_tokens`，改为 async 上下文直接 `await log_token_to_db`
+- 流式路径加 `stream_options` + 文本估算兜底；深度搜索路径补充 token 记录
+
+**用户体验优化**
+- System prompt 注入当前日期，解决 LLM 不知道”今天”是哪天的问题
+- 管理员可见所有用户模版（`GET /api/templates` 权限修复）
+- 用户设置页新增”重置 API”按钮（二次确认 + 重新加载已保存配置）
+- 管理员面板 UI 优化：用户操作下拉菜单、系统配置卡片化分组、论文状态本地化、模板空字段占位
+
+**日志与可观测性**
+- 结构化日志输出到 `backend/logs/app.log`（RotatingFileHandler，5MB 轮转）
+- Chat 入口记录 user_id / paper_id / question；工具匹配记录 matched_skills
+
+**Docker 化部署**
+- 多阶段 Dockerfile（前端构建 + 后端运行 + 嵌入模型自动下载）
+- docker-compose.yml（MySQL + App 一键部署，健康检查）
+
+---
+
+### v2.0（2026-05-24）
+
+- 初始版本：PDF 解析、全文翻译、摘要提取、创新点评审
+- LangGraph StateGraph 流水线编排
+- DeepSeek + Qwen3 异构多智能体 ToT 策略
+- ChromaDB + BM25 多路 RAG 检索
+- SSE 实时进度推送
+- 双栏 HTML 版式渲染
+- JWT + 邮箱验证码认证
+
+---
+
 *Developed with ❤️ by ByteTitan-star*
+
