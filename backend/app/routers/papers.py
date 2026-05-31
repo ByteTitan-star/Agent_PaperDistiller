@@ -430,5 +430,12 @@ async def delete_paper(
     except Exception:
         pass
 
+    # 删除 OSS 对象
+    try:
+        if storage.oss and storage.oss.available:
+            storage.oss.delete_prefix(paper_id)
+    except Exception:
+        pass
+
     await db.delete(paper)
     return {"message": "论文已删除"}

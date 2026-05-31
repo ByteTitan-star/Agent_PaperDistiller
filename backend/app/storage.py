@@ -174,6 +174,29 @@ class OSSClient:
         key = self._key(*key_parts)
         return self._bucket.object_exists(key)
 
+    def download_bytes(self, *key_parts: str) -> bytes | None:
+        """从 OSS 下载对象，返回 bytes 或 None。"""
+        if not self._bucket:
+            return None
+        key = self._key(*key_parts)
+        try:
+            result = self._bucket.get_object(key)
+            return result.read()
+        except Exception:
+            return None
+
+    def download_to_file(self, local_path: Path, *key_parts: str) -> bool:
+        """从 OSS 下载对象到本地文件，返回是否成功。"""
+        if not self._bucket:
+            return False
+        key = self._key(*key_parts)
+        try:
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            self._bucket.get_object_to_file(key, str(local_path))
+            return True
+        except Exception:
+            return False
+
 
 
 
@@ -650,28 +673,26 @@ class Storage:
         self._upload_to_oss(output_file, paper_id, output_file.name)
 
     def read_result(self, paper_id: str, kind: ResultKind, summary_template: str | None = None) -> str:
-        """读取处理结果，如果不存在返回空字符串"""
+        """读取处理结果。本地优先，本地不存在时从 OSS 下载缓存后读取。"""
         output_file = self.paper_output_dir(paper_id) / self._result_output_name(kind, summary_template)
-        if not output_file.exists():
-            return ""
-        return output_file.read_text(encoding="utf-8")
+        if output_file.exists():
+            return output_file.read_text(encoding="utf-8")
+        # 本地不存在，尝试从 OSS 下载到本地缓存
+        if self.oss and self.oss.available:
+            if self.oss.download_to_file(output_file, paper_id, output_file.name):
+                return output_file.read_text(encoding="utf-8")
+        return ""
 
     def save_chunks(self, paper_id: str, chunks: list[str]) -> None:
-        """
-        保存文本块到本地JSON，并同步到向量数据库。
-        
-        双保险策略：
-        1. 总是保存chunks.json（本地备份）
-        2. 尝试存入向量库（失败不阻塞）
-        
-        向量存储失败时静默跳过，问答阶段会自动回退到词法检索。
-        """
+        """保存文本块到本地JSON + OSS，并同步到向量数据库。"""
         path = self.paper_output_dir(paper_id) / "chunks.json"
         safe_chunks = [make_utf8_safe(chunk) for chunk in chunks]
         path.write_text(
             json.dumps(safe_chunks, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        # 上传到 OSS
+        self._upload_to_oss(path, paper_id, "chunks.json")
 
         try:
             self.vector_store.upsert_chunks(paper_id, safe_chunks)
@@ -680,11 +701,15 @@ class Storage:
             pass
 
     def load_chunks(self, paper_id: str) -> list[str]:
-        """从本地JSON加载文本块"""
+        """加载文本块。本地优先，本地不存在时从 OSS 下载缓存后读取。"""
         path = self.paper_output_dir(paper_id) / "chunks.json"
-        if not path.exists():
-            return []
-        return json.loads(path.read_text(encoding="utf-8"))
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+        # 本地不存在，尝试从 OSS 下载到本地缓存
+        if self.oss and self.oss.available:
+            if self.oss.download_to_file(path, paper_id, "chunks.json"):
+                return json.loads(path.read_text(encoding="utf-8"))
+        return []
 
     def search_similar_chunks(self, paper_id: str, question: str, top_k: int) -> list[str]:
         """

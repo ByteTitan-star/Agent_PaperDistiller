@@ -105,7 +105,7 @@ def extract_backdoor_indicators(text: str) -> dict[str, str]:
     }
 
 
-def extract_backdoor_structured_info(text: str, title: str, settings: Any = None) -> dict[str, Any]:
+def extract_backdoor_structured_info(text: str, title: str, settings: Any = None, user_id: int | None = None) -> dict[str, Any]:
     """
     【结构化信息提取】
     使用 DeepSeek LLM 对论文进行结构化信息提取。
@@ -186,6 +186,8 @@ def extract_backdoor_structured_info(text: str, title: str, settings: Any = None
                 model_name=effective_settings.deepseek_model,
                 prompt_tokens=response.usage.prompt_tokens,
                 completion_tokens=response.usage.completion_tokens,
+                user_id=user_id,
+                action_type="pipeline",
             )
 
         content = (response.choices[0].message.content or "").strip()

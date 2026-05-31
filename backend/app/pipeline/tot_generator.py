@@ -198,6 +198,7 @@ def generate_tot_idea(
     tags: list[str],
     evidence: list[str],
     settings: Settings,
+    user_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """
     【严格 ToT 多路评估生成】
@@ -291,6 +292,8 @@ def generate_tot_idea(
                     model_name=settings.deepseek_model,
                     prompt_tokens=response.usage.prompt_tokens,
                     completion_tokens=response.usage.completion_tokens,
+                    user_id=user_id,
+                    action_type="pipeline",
                 )
 
             content = (response.choices[0].message.content or "").strip()
@@ -350,6 +353,8 @@ def generate_tot_idea(
                 model_name=settings.qwen_model,
                 prompt_tokens=review_response.usage.prompt_tokens,
                 completion_tokens=review_response.usage.completion_tokens,
+                user_id=user_id,
+                action_type="pipeline",
             )
 
         review_content = (review_response.choices[0].message.content or "").strip()
@@ -440,27 +445,14 @@ def generate_innovation_ideas(
     tags: list[str],
     evidence: list[str],
     settings: Settings | None = None,
+    user_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """
     【创新建议生成入口】
     优先尝试 ToT 多路评估生成，失败时回退到规则库。
-
-    决策逻辑：
-    - 如果 settings 存在且 enable_tot 为 True，尝试 ToT 生成
-    - ToT 失败（无候选方案或配置缺失）则使用规则库
-    - 未提供 settings 时直接使用规则库
-
-    参数:
-        title: 论文标题
-        tags: 领域标签
-        evidence: 证据片段
-        settings: 可选的配置对象
-
-    返回:
-        (创新方案列表, 失败原因)。成功时失败原因为 None
     """
     if settings:
-        ideas, reason = generate_tot_idea(title=title, tags=tags, evidence=evidence, settings=settings)
+        ideas, reason = generate_tot_idea(title=title, tags=tags, evidence=evidence, settings=settings, user_id=user_id)
         if ideas:
             return ideas, None
         fallback = generate_rule_based_innovation_ideas(tags)

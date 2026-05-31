@@ -175,6 +175,7 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
         )
         layout_path = storage.paper_output_dir(state["paper_id"]) / "translated_layout.html"
         await asyncio.to_thread(layout_path.write_text, layout_html, "utf-8")
+        storage._upload_to_oss(layout_path, state["paper_id"], "translated_layout.html")
 
         return {
             "translated_sections": translated_sections,
@@ -233,6 +234,7 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
             translated_chunks,
             state.get("text", ""),
             settings,
+            state.get("user_id"),
         )
         await asyncio.to_thread(
             storage.write_result, state["paper_id"], "summary", summary_md, state["template_name"]
@@ -268,6 +270,7 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
             state.get("chunks", []),
             state.get("translated_chunks", []),
             settings,
+            state.get("user_id"),
         )
         await asyncio.to_thread(storage.write_result, state["paper_id"], "improvement", improvement_md)
         await broker.update(
@@ -379,6 +382,7 @@ async def run_pipeline_linear(
     )
     layout_path = storage.paper_output_dir(paper_id) / "translated_layout.html"
     await asyncio.to_thread(layout_path.write_text, layout_html, "utf-8")
+    storage._upload_to_oss(layout_path, paper_id, "translated_layout.html")
     await asyncio.sleep(0.1)
     logger.info("[Linear] Translation done: failures=%d", translation_failures)
 
@@ -402,6 +406,7 @@ async def run_pipeline_linear(
         translated_chunks,
         text,
         settings,
+        user_id,
     )
     await asyncio.to_thread(storage.write_result, paper_id, "summary", summary_md, template_name)
     await asyncio.sleep(0.1)
@@ -420,6 +425,7 @@ async def run_pipeline_linear(
         chunks,
         translated_chunks,
         settings,
+        user_id,
     )
     await asyncio.to_thread(storage.write_result, paper_id, "improvement", improvement_md)
     await asyncio.sleep(0.1)
