@@ -1,6 +1,6 @@
 # ⚗️ PaperDistiller: 异构多智能体定向学术论文蒸馏平台
 
-![PaperDistiller 首页界面](./UI_figures/Home.png)
+![PaperDistiller 首页界面](./UI_figures/HOME.png)
 
 > **基于 DeepSeek-V3.2 与 Qwen3 的异构多智能体定向学术论文蒸馏平台**
 >
