@@ -224,9 +224,9 @@ def generate_tot_idea(
     deepseek_key = settings.deepseek_api_key.strip()
     if not deepseek_key:
         return [], "DEEPSEEK_API_KEY 未配置"
-    qwen_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+    qwen_key = settings.qwen_api_key.strip()
     if not qwen_key:
-        return [], "DASHSCOPE_API_KEY 未配置"
+        return [], "QWEN_API_KEY 未配置"
 
     try:
         from openai import OpenAI

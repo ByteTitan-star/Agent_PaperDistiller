@@ -105,7 +105,7 @@ def extract_backdoor_indicators(text: str) -> dict[str, str]:
     }
 
 
-def extract_backdoor_structured_info(text: str, title: str) -> dict[str, Any]:
+def extract_backdoor_structured_info(text: str, title: str, settings: Any = None) -> dict[str, Any]:
     """
     【结构化信息提取】
     使用 DeepSeek LLM 对论文进行结构化信息提取。
@@ -125,6 +125,7 @@ def extract_backdoor_structured_info(text: str, title: str) -> dict[str, Any]:
     参数:
         text: 论文全文（截取前 28000 字符）
         title: 论文标题
+        settings: 可选配置对象，未提供时使用全局 settings
 
     返回:
         解析后的 JSON 字典，失败则返回空字典
@@ -135,13 +136,13 @@ def extract_backdoor_structured_info(text: str, title: str) -> dict[str, Any]:
         return {}
 
     try:
-        settings = get_settings()
-        if not settings.deepseek_api_key.strip():
+        effective_settings = settings or get_settings()
+        if not effective_settings.deepseek_api_key.strip():
             raise ValueError("DEEPSEEK_API_KEY 未配置")
 
         client = OpenAI(
-            api_key=settings.deepseek_api_key,
-            base_url=settings.deepseek_base_url.rstrip("/"),
+            api_key=effective_settings.deepseek_api_key,
+            base_url=effective_settings.deepseek_base_url.rstrip("/"),
             timeout=60,
         )
 
@@ -173,7 +174,7 @@ def extract_backdoor_structured_info(text: str, title: str) -> dict[str, Any]:
         只返回 JSON，不要加任何其他文字。"""
 
         response = client.chat.completions.create(
-            model=settings.deepseek_model,
+            model=effective_settings.deepseek_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=1200,
@@ -181,8 +182,8 @@ def extract_backdoor_structured_info(text: str, title: str) -> dict[str, Any]:
 
         if response.usage:
             log_token_usage(
-                project_name=settings.app_name,
-                model_name=settings.deepseek_model,
+                project_name=effective_settings.app_name,
+                model_name=effective_settings.deepseek_model,
                 prompt_tokens=response.usage.prompt_tokens,
                 completion_tokens=response.usage.completion_tokens,
             )

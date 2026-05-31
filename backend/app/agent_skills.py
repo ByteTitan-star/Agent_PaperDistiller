@@ -1,4 +1,4 @@
-﻿"""Skill registry with optional semantic retrieval and safe execution."""
+"""Skill registry with optional semantic retrieval and safe execution."""
 
 from __future__ import annotations
 
@@ -79,6 +79,14 @@ class SkillRegistry:
     def all_tools(self) -> list[LoadedSkill]:
         return list(self._skills.values())
 
+    # 关键词快速匹配规则：命中则直接返回对应工具，绕过语义匹配
+    _KEYWORD_RULES: list[tuple[list[str], str]] = [
+        (["天气", "weather", "温度", "气温", "forecast"], "web_search"),
+        (["新闻", "news", "最新消息", "today", "今天发生"], "web_search"),
+        (["github", "仓库", "repo", "下载代码", "download code", "开源"], "web_search"),
+        (["arxiv", "论文搜索", "search paper"], "arxiv_search_tool"),
+    ]
+
     def select_tools(self, query: str, top_k: int, min_similarity: float = 0.8) -> list[LoadedSkill]:
         """Return only high-match tools. If no high match, return [] explicitly."""
         if not self._skills:
@@ -87,6 +95,13 @@ class SkillRegistry:
         limit = max(1, min(top_k, len(self._skills)))
         if not query.strip():
             return []
+
+        # 关键词快速匹配
+        q_lower = query.lower()
+        for keywords, tool_name in self._KEYWORD_RULES:
+            if any(kw in q_lower for kw in keywords):
+                if tool_name in self._skills:
+                    return [self._skills[tool_name]]
 
         if not (self._semantic_ready and self._collection is not None and self._embedder is not None):
             return []

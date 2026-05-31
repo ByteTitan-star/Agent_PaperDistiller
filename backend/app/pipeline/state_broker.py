@@ -1,11 +1,14 @@
 # SSE任务状态管理
 import asyncio
 import json
+import logging
 from collections import defaultdict
 from typing import Any
 
 from .common_utils import utc_now_iso
 from ..schemas import TaskState
+
+logger = logging.getLogger(__name__)
 
 
 def sse_event(payload: dict[str, Any], event: str = "progress") -> str:
@@ -94,6 +97,7 @@ class TaskBroker:
         )
         async with self._lock:
             self._tasks[task_id] = state
+        logger.info("Task created: task_id=%s paper_id=%s", task_id, paper_id)
         await self._notify(task_id, state.model_dump())
 
     async def update(
@@ -138,21 +142,40 @@ class TaskBroker:
                 updated_at=utc_now_iso(),
             )
             self._tasks[task_id] = state
+        logger.info(
+            "Task updated: task_id=%s status=%s progress=%d%% msg=%s",
+            task_id, status, progress, message,
+        )
         await self._notify(task_id, state.model_dump())
 
     async def get(self, task_id: str) -> TaskState | None:
         """
         【获取任务状态】
         获取任务当前状态快照。
-
-        参数:
-            task_id: 任务 ID
-
-        返回:
-            TaskState 对象，不存在则返回 None
         """
         async with self._lock:
             return self._tasks.get(task_id)
+
+    async def cancel(self, task_id: str) -> bool:
+        """标记任务为 cancelled，通知订阅者。返回是否成功取消。"""
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if not task or task.status in {"done", "failed", "cancelled"}:
+                return False
+            state = TaskState(
+                task_id=task.task_id,
+                paper_id=task.paper_id,
+                status="cancelled",
+                progress=task.progress,
+                message="任务已取消。",
+                generation_model_name=task.generation_model_name,
+                evaluation_model_name=task.evaluation_model_name,
+                collaboration_mode=task.collaboration_mode,
+                updated_at=utc_now_iso(),
+            )
+            self._tasks[task_id] = state
+        await self._notify(task_id, state.model_dump())
+        return True
 
     async def _notify(self, task_id: str, payload: dict[str, Any]) -> None:
         """

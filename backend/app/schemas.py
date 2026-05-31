@@ -16,7 +16,42 @@ class UploadResponse(BaseModel):
 
 
 class TemplateInfo(BaseModel):
+    id: int
     name: str
+    domain_tag: str = "General"
+    is_default: bool = False
+    is_system: bool = False
+    owner_name: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class TemplateDetail(BaseModel):
+    id: int
+    name: str
+    content: str
+    domain_tag: str = "General"
+    is_default: bool = False
+    is_system: bool = False
+    owner_name: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class TemplateCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1)
+    domain_tag: str = Field(default="General", max_length=100)
+
+
+class TemplateUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    content: str | None = Field(default=None, min_length=1)
+    domain_tag: str | None = Field(default=None, max_length=100)
 
 
 class PaperMeta(BaseModel):
@@ -30,6 +65,7 @@ class PaperMeta(BaseModel):
     year: int | None = None
     authors: list[str] = Field(default_factory=list)
     domain_tags: list[str] = Field(default_factory=list)
+    task_id: str | None = None
 
 
 class TaskState(BaseModel):
@@ -66,6 +102,10 @@ class ChatRequest(BaseModel):
         default=False,
         description="是否启用 ReAct 深度搜索模式（手动触发）。",
     )
+    session_id: str | None = Field(
+        default=None,
+        description="会话 ID，为空时自动创建新会话。",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -73,6 +113,23 @@ class ChatResponse(BaseModel):
     contexts: list[str]
     reasoning_trace: str | None = None
     thinking_chain: list[str] | None = None
+    session_id: str | None = None
+
+
+class ChatSessionInfo(BaseModel):
+    session_id: str
+    paper_id: str
+    created_at: str
+    message_count: int = 0
+    last_message_preview: str | None = None
+
+
+class ChatMessageInfo(BaseModel):
+    role: str
+    content: str
+    thinking_chain: list[str] | None = None
+    deep_search: bool = False
+    created_at: str
 
 
 class SystemInfoResponse(BaseModel):

@@ -13,7 +13,14 @@ SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
 TOKEN_MD_PATH = r"D:\Z-Desktop\找工作\8大模型开发\实战项目\Token记录\token.md"
 
 
-def log_token_usage(project_name: str, model_name: str, prompt_tokens: int, completion_tokens: int) -> None:
+def log_token_usage(
+    project_name: str,
+    model_name: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    user_id: int | None = None,
+    action_type: str = "pipeline",
+) -> None:
     """
     【Token 消耗记录】
     更新公共的 token.md 文件，追加新记录并自动汇总统计信息。
@@ -125,6 +132,23 @@ def log_token_usage(project_name: str, model_name: str, prompt_tokens: int, comp
                 )
     except Exception as e:  # pragma: no cover - 日志失败不影响主流程
         print(f"写入 token.md 失败: {e}")
+
+    # 双写：异步写入数据库
+    try:
+        import asyncio
+        from ..services.token_logger import log_token_to_db
+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(
+                log_token_to_db(user_id, model_name, prompt_tokens, completion_tokens, action_type)
+            )
+        else:
+            loop.run_until_complete(
+                log_token_to_db(user_id, model_name, prompt_tokens, completion_tokens, action_type)
+            )
+    except Exception:
+        pass
 
 
 def utc_now_iso() -> str:

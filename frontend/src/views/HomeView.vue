@@ -10,7 +10,7 @@
 
       <div class="upload-workspace glass-panel">
         <div class="config-bar">
-          <el-form :inline="true" class="elegant-form">
+          <el-form :inline="true" class="elegant-form" @submit.prevent>
             <el-form-item label="Target Language">
               <el-select v-model="targetLanguage" style="width: 160px" effect="light">
                 <el-option label="中文 (Chinese)" value="中文" />
@@ -20,7 +20,22 @@
             </el-form-item>
             <el-form-item label="Output Template">
               <el-select v-model="summaryTemplate" style="width: 200px" effect="light">
-                <el-option v-for="template in templates" :key="template.name" :label="template.name" :value="template.name" />
+                <el-option-group label="系统模板">
+                  <el-option
+                    v-for="t in systemTemplates"
+                    :key="t.name"
+                    :label="t.name"
+                    :value="t.name"
+                  />
+                </el-option-group>
+                <el-option-group v-if="userTemplates.length" label="用户模板">
+                  <el-option
+                    v-for="t in userTemplates"
+                    :key="t.name"
+                    :label="t.name"
+                    :value="t.name"
+                  />
+                </el-option-group>
               </el-select>
             </el-form-item>
           </el-form>
@@ -64,7 +79,7 @@
 
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { UploadFilled } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
@@ -82,7 +97,9 @@ const systemStore = useSystemStore();
 // 上传配置：目标语言 + 摘要模板（最终会作为 multipart 表单字段提交给后端）。
 const targetLanguage = ref("中文");
 const summaryTemplate = ref("tinghua.md");
-const templates = ref([{ name: "tinghua.md" }]);
+const templates = ref([]);
+const systemTemplates = computed(() => templates.value.filter((t) => t.is_system));
+const userTemplates = computed(() => templates.value.filter((t) => !t.is_system));
 
 // 任务状态：来自 `/api/upload` 返回的 task_id/paper_id 与 SSE 进度流。
 const taskId = ref("");
@@ -105,7 +122,6 @@ const statusLabelMap = {
 };
 
 const loadTemplates = async () => {
-  // GET /api/templates -> [{name}]，用于模板下拉框。
   const { data } = await listTemplates();
   templates.value = data;
   if (!templates.value.some((item) => item.name === summaryTemplate.value) && templates.value.length > 0) {
@@ -124,7 +140,7 @@ const closeTaskStream = () => {
 const openTaskStream = (newTaskId) => {
   // 订阅 GET /api/tasks/{taskId}/events（SSE），实时接收 progress/status/message。
   closeTaskStream();
-  eventSource = new EventSource(`${API_BASE_URL}/api/tasks/${newTaskId}/events`);
+  eventSource = new EventSource(`${API_BASE_URL}/api/tasks/${newTaskId}/events?token=${localStorage.getItem("access_token")}`);
   eventSource.addEventListener("progress", async (event) => {
     const payload = JSON.parse(event.data);
     progress.value = payload.progress;
@@ -245,7 +261,19 @@ onBeforeUnmount(() => {
   justify-content: center;
 }
 
+:deep(.elegant-form) {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 24px;
+  align-items: center;
+}
+
 /* 覆盖 Element UI 表单样式以契合通透感 */
+:deep(.elegant-form .el-form-item) {
+  margin-right: 0;
+  margin-bottom: 0;
+}
+
 :deep(.elegant-form .el-form-item__label) {
   font-family: var(--font-body);
   font-weight: 500;

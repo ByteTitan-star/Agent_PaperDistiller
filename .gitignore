@@ -10,8 +10,12 @@ __pycache__/
 .venv/
 venv/
 
-# Data
+# Data & Logs
 backend/data/
+backend/logs/
+
+# ML Models (downloaded at build time)
+backend/models/
 
 # Node
 frontend/node_modules/
@@ -29,3 +33,9 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Temp
+*.log
+run_log.txt
+log.txt
+=0.3.0

@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     JSON,
     func,
 )
@@ -91,10 +92,19 @@ class Template(Base, TimestampMixin):
     __tablename__ = "templates"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     domain_tag: Mapped[str] = mapped_column(String(100), default="General")
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, default=None)
+    is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    owner = relationship("User", backref="templates")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_templates_user_name"),
+        Index("idx_templates_user", "user_id"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +235,33 @@ class AuditLog(Base):
 
 
 # ---------------------------------------------------------------------------
-# 10. 邮箱验证记录表
+# 10. Token 用量记录表
+# ---------------------------------------------------------------------------
+class TokenUsageLog(Base):
+    __tablename__ = "token_usage_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    action_type: Mapped[str] = mapped_column(String(100), nullable=False, default="chat")
+    detail: Mapped[dict | None] = mapped_column(JSON, default=None)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("idx_token_user", "user_id"),
+        Index("idx_token_model", "model_name"),
+        Index("idx_token_action", "action_type"),
+        Index("idx_token_created", "created_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 11. 邮箱验证记录表
 # ---------------------------------------------------------------------------
 class EmailVerification(Base):
     __tablename__ = "email_verifications"

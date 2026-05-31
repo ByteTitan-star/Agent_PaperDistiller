@@ -6,9 +6,10 @@
         <h1 class="page-title">{{ paper?.title || '阅读工作台' }}</h1>
       </div>
       <div class="head-right">
-        <el-tag :type="statusTypeMap[paper?.status] || 'info'">{{ statusLabel(paper?.status) }}</el-tag>
-        <el-tag class="model-tag" effect="dark">{{ modelListLabel }}</el-tag>
-        <el-tag class="multi-agent-tag" type="success" effect="plain">Multi-Agent Mode</el-tag>
+        <el-tag :type="statusTypeMap[paper?.status] || 'info'" size="small">{{ statusLabel(paper?.status) }}</el-tag>
+        <el-tooltip :content="modelListLabel" placement="bottom">
+          <el-tag class="model-tag" effect="plain" size="small">{{ generationModel }}</el-tag>
+        </el-tooltip>
       </div>
     </header>
 
@@ -67,43 +68,112 @@
               inactive-text=""
               style="--el-switch-on-color: #6366f1"
             />
-            <el-tag effect="plain">Top-K: 3</el-tag>
           </div>
         </div>
 
-        <p class="chat-subtitle">可继续追问：方法局限、实验设置、可复现性、可扩展方向等。</p>
-
-        <div class="chat-box">
-          <div v-for="(item, idx) in messages" :key="idx" :class="['message', item.role]">
-            <div class="message-role">{{ item.role === 'user' ? '你' : 'Agent' }}</div>
-            
-            <div
-              v-if="item.role === 'assistant'"
-              class="message-text chat-markdown"
-              v-html="renderChatMarkdown(item.text)"
-            ></div>
-
-            <!-- Thinking Chain (ReAct deep search) -->
-            <el-collapse v-if="item.thinking?.length" class="thinking-collapse">
-              <el-collapse-item title="思考过程">
-                <div v-for="(step, si) in item.thinking" :key="si" class="thinking-step">
-                  {{ step }}
-                </div>
-              </el-collapse-item>
-            </el-collapse>
-            
-            <pre v-else class="message-text">{{ item.text }}</pre>
+        <div class="chat-box" ref="chatBoxRef">
+          <!-- 欢迎消息 -->
+          <div v-if="messages.length === 0" class="welcome-hint">
+            <p>👋 你好！我是Agent PaperDistriller助手，可以回答关于这篇论文的任何问题。</p>
+            <p>也可以聊任何你想了解的话题。</p>
           </div>
+
+          <div v-for="(item, idx) in messages" :key="idx" :class="['message', item.role]">
+            <!-- 头像 -->
+            <div class="avatar">
+              <span v-if="item.role === 'user'">你</span>
+              <span v-else>AI</span>
+            </div>
+
+            <div class="bubble">
+              <!-- ====== 深度研究模式 ====== -->
+              <template v-if="item._isResearch">
+                <!-- 研究阶段时间线 -->
+                <div class="research-timeline" v-if="item._phases?.length">
+                  <div
+                    v-for="(p, pi) in item._phases"
+                    :key="pi"
+                    :class="['timeline-step', { active: pi === item._phases.length - 1 && item._streaming }]"
+                  >
+                    <span class="timeline-icon">{{ phaseIcon(p.phase) }}</span>
+                    <span class="timeline-label">{{ p.label }}</span>
+                    <span v-if="p.detail" class="timeline-detail">{{ p.detail }}</span>
+                  </div>
+                </div>
+
+                <!-- 来源卡片 -->
+                <div v-if="item._sources?.length" class="sources-section">
+                  <el-collapse class="sources-collapse">
+                    <el-collapse-item :title="`📚 参考来源（${item._sources.length}）`">
+                      <div v-for="(s, si) in item._sources" :key="si" class="source-card">
+                        <span class="source-icon">🔍</span>
+                        <a v-if="s.url" :href="s.url" target="_blank" rel="noopener" class="source-link">{{ s.title || s.snippet || '搜索结果' }}</a>
+                        <span v-else class="source-text">{{ s.snippet || s.title || '搜索结果' }}</span>
+                      </div>
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
+
+                <!-- 工具使用提示 -->
+                <div v-if="item._toolHint && item._streaming" class="tool-hint">{{ item._toolHint }}</div>
+
+                <!-- 研究报告正文 -->
+                <div v-if="item.text" class="research-report">
+                  <div class="chat-markdown" v-html="renderChatMarkdown(item.text)"></div>
+                </div>
+
+                <!-- 流式光标 -->
+                <span v-if="item._streaming && item.text" class="streaming-cursor">▍</span>
+              </template>
+
+              <!-- ====== 普通对话模式 ====== -->
+              <template v-else>
+                <div v-if="item._toolHint" class="tool-hint">{{ item._toolHint }}</div>
+                <div
+                  v-if="item.role === 'assistant'"
+                  class="bubble-text chat-markdown"
+                  v-html="renderChatMarkdown(item.text)"
+                ></div>
+                <pre v-else class="bubble-text">{{ item.text }}</pre>
+                <span v-if="item._streaming" class="streaming-cursor">▍</span>
+              </template>
+
+              <!-- Thinking Chain（两种模式通用） -->
+              <el-collapse v-if="item.thinking?.length" class="thinking-collapse">
+                <el-collapse-item title="💭 查看推理过程">
+                  <div v-for="(step, si) in item.thinking" :key="si" class="thinking-step">
+                    {{ step }}
+                  </div>
+                </el-collapse-item>
+              </el-collapse>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 快捷追问胶囊 -->
+        <div v-if="messages.length > 0 && !sending" class="suggestions">
+          <button
+            v-for="s in suggestions"
+            :key="s"
+            class="pill"
+            @click="question = s; sendQuestion()"
+          >{{ s }}</button>
         </div>
 
         <div class="chat-input">
-          <el-input
-            v-model="question"
-            type="textarea"
-            :rows="3"
-            placeholder="例如：这篇论文的核心创新点是否可迁移到别的数据集？"
-          />
-          <el-button type="primary" :loading="sending" @click="sendQuestion">发送</el-button>
+          <div class="textarea-wrap">
+            <textarea
+              ref="textareaRef"
+              v-model="question"
+              class="auto-textarea"
+              placeholder="输入您想问的问题..."
+              @keydown="handleKeydown"
+              @input="autoResize"
+              rows="1"
+            ></textarea>
+          </div>
+          <el-button type="primary" :loading="sending" @click="sendQuestion" :disabled="!question.trim()">发送</el-button>
         </div>
       </aside>
     </section>
@@ -111,23 +181,26 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
 import MarkdownIt from "markdown-it";
 
 import {
   askPaper,
+  askPaperStream,
   getPaperContent,
   getPaperPdfDownloadUrl,
   getPaperPdfUrl,
-  getTranslationLayoutUrl
+  getTranslationLayoutUrl,
+  listChatSessions,
+  getChatMessages,
 } from "../api/client";
 import { usePaperStore } from "../stores/papers";
 import { useSystemStore } from "../stores/system";
 
 // Markdown 渲染器：禁用原始 HTML，避免直接渲染后端返回中的 HTML 片段。
-const md = new MarkdownIt({ html: false, breaks: true, linkify: true });
+const md = new MarkdownIt({ html: false, breaks: false, linkify: true });
 
 // 路由参数与全局状态。
 const route = useRoute();
@@ -147,8 +220,41 @@ const contents = reactive({
 const question = ref("");
 const sending = ref(false);
 const deepSearch = ref(false);
-// 问答消息列表：[{ role: "user"|"assistant", text: string }]
+const textareaRef = ref(null);
+const chatBoxRef = ref(null);
 const messages = ref([]);
+const sessionId = ref(null);
+
+// 加载最近一次会话的历史消息
+const loadChatHistory = async () => {
+  if (!paperId.value) return;
+  try {
+    const { data: sessions } = await listChatSessions(paperId.value);
+    if (sessions && sessions.length > 0) {
+      const latest = sessions[0];
+      sessionId.value = latest.session_id;
+      const { data: historyMsgs } = await getChatMessages(latest.session_id);
+      if (historyMsgs && historyMsgs.length > 0) {
+        messages.value = historyMsgs.map((m) => ({
+          role: m.role,
+          text: m.content,
+          thinking: m.thinking_chain,
+          _streaming: false,
+        }));
+      }
+    }
+  } catch {
+    // 静默失败，不影响正常使用
+  }
+};
+
+// 快捷追问建议
+const suggestions = computed(() => {
+  if (messages.value.length === 0) return [];
+  const base = ["这篇论文的核心创新点是什么？", "方法有哪些局限性？", "实验结果如何？"];
+  if (deepSearch.value) return [...base, "最新相关研究有哪些？"];
+  return base;
+});
 
 // 后端论文状态到样式/文案映射。
 const statusTypeMap = {
@@ -177,8 +283,36 @@ const modelListLabel = computed(
 
 const renderMarkdown = (source) => md.render(source || "_暂无内容，请稍后刷新。_");
 
-// 👇 新增这一行：专门给聊天框用的 Markdown 渲染器
-const renderChatMarkdown = (source) => md.render(source || "");
+const renderChatMarkdown = (source) => {
+  if (!source) return "";
+  // 清理 LLM 输出的连续多余空行
+  return md.render(source.replace(/\n{3,}/g, "\n\n"));
+};
+
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (chatBoxRef.value) chatBoxRef.value.scrollTop = chatBoxRef.value.scrollHeight;
+  });
+};
+
+const phaseIcon = (phase) => {
+  const map = { planning: "🔍", clarifying: "💡", searching: "🌐", analyzing: "🧠", generating: "✍️" };
+  return map[phase] || "⏳";
+};
+
+const handleKeydown = (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendQuestion();
+  }
+};
+
+const autoResize = () => {
+  const el = textareaRef.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 120) + "px";
+};
 
 const openPdfInNewTab = () => {
   // 打开 GET /api/papers/{paperId}/pdf
@@ -221,29 +355,68 @@ const loadContent = async (tabName = activeTab.value) => {
 };
 
 const sendQuestion = async () => {
-  if (!question.value.trim()) return;
+  if (!question.value.trim() || sending.value) return;
   const text = question.value.trim();
   messages.value.push({ role: "user", text });
   question.value = "";
   sending.value = true;
-  try {
-    const { data } = await askPaper(paperId.value, {
-      question: text,
-      top_k: 3,
-      deep_search: deepSearch.value,
-    });
-    const answerText = data.answer?.startsWith("[")
-      ? data.answer
-      : `[${generationModel.value}] ${data.answer}`;
+  if (textareaRef.value) textareaRef.value.style.height = "auto";
+  scrollToBottom();
+
+  const isDeep = deepSearch.value;
+  const assistantIdx = messages.value.length;
+
+  if (isDeep) {
+    // 深度研究：创建带时间线的研究消息
     messages.value.push({
-      role: "assistant",
-      text: answerText,
-      thinking: data.thinking_chain || null,
+      role: "assistant", text: "", _streaming: true, _isResearch: true,
+      _phases: [], _sources: [], _currentPhase: "",
     });
+  } else {
+    messages.value.push({ role: "assistant", text: "", _streaming: true });
+  }
+  scrollToBottom();
+
+  try {
+    await askPaperStream(
+      paperId.value,
+      { question: text, top_k: 8, deep_search: isDeep, session_id: sessionId.value },
+      (event) => {
+        const msg = messages.value[assistantIdx];
+        if (event.type === "phase") {
+          msg._phases.push({ phase: event.phase, label: event.label, detail: event.detail || "" });
+          msg._currentPhase = event.phase;
+          scrollToBottom();
+        } else if (event.type === "source") {
+          msg._sources.push(event);
+          scrollToBottom();
+        } else if (event.type === "tool") {
+          msg._toolHint = `🔍 正在搜索：${event.query || event.name}`;
+          scrollToBottom();
+        } else if (event.type === "token") {
+          msg.text += event.text;
+          scrollToBottom();
+        } else if (event.type === "done") {
+          msg.text = event.answer || msg.text;
+          msg._streaming = false;
+          if (event.thinking_chain) msg.thinking = event.thinking_chain;
+          if (event.session_id) sessionId.value = event.session_id;
+          scrollToBottom();
+        } else if (event.type === "error") {
+          msg.text = event.text;
+          msg._streaming = false;
+          ElMessage.error(event.text);
+        }
+      }
+    );
   } catch (error) {
+    messages.value[assistantIdx].text = error?.response?.data?.detail || "提问失败";
+    messages.value[assistantIdx]._streaming = false;
     ElMessage.error(error?.response?.data?.detail || "提问失败");
   } finally {
+    messages.value[assistantIdx]._streaming = false;
     sending.value = false;
+    scrollToBottom();
   }
 };
 
@@ -252,9 +425,11 @@ watch(
   async () => {
     // 切换论文时重置对话并重新加载默认摘要页。
     messages.value = [];
+    sessionId.value = null;
     activeTab.value = "summary";
     await loadPaper();
     await loadContent("summary");
+    await loadChatHistory();
   }
 );
 
@@ -263,6 +438,7 @@ onMounted(async () => {
   document.body.classList.add("workspace-lock");
   await loadPaper();
   await loadContent("summary");
+  await loadChatHistory();
   if (!systemStore.loaded) {
     await systemStore.fetchInfo();
   }
@@ -319,13 +495,9 @@ onBeforeUnmount(() => {
 }
 
 .model-tag {
-  max-width: 280px;
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.multi-agent-tag {
-  font-weight: 600;
 }
 
 .workspace-grid {
@@ -423,12 +595,232 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
+.chat-box {
+  margin: 0 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+/* 欢迎提示 */
+.welcome-hint {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 40px 20px;
+  line-height: 1.8;
+}
+.welcome-hint p { margin: 0; }
+
+/* 消息行 */
+.message {
+  display: flex;
+  gap: 8px;
+  max-width: 95%;
+}
+.message.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.message.assistant {
+  align-self: flex-start;
+}
+
+/* 头像 */
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+  color: #fff;
+}
+.message.user .avatar { background: #6366f1; }
+.message.assistant .avatar { background: #0ea5e9; }
+
+/* 气泡 */
+.bubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  max-width: 100%;
+  min-width: 60px;
+}
+.message.user .bubble {
+  background: #6366f1;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.message.assistant .bubble {
+  background: #f1f5f9;
+  color: #1e293b;
+  border-bottom-left-radius: 4px;
+}
+
+.bubble-text {
+  margin: 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Markdown 渲染内容：关闭 pre-wrap，让 MarkdownIt 控制换行 */
+.chat-markdown {
+  white-space: normal;
+  line-height: 1.55;
+  font-size: 13.5px;
+}
+
+/* 用户消息保持 pre-wrap（纯文本） */
+.message.user .bubble-text {
+  white-space: pre-wrap;
+}
+
+/* 打字动画 */
+.typing-dots {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #94a3b8;
+  animation: dot-blink 1.4s infinite both;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-blink {
+  0%, 80%, 100% { opacity: 0.3; }
+  40% { opacity: 1; }
+}
+
+/* 深度搜索进度 */
+.search-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #6366f1;
+  margin-top: 6px;
+}
+.search-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #c7d2fe;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 流式光标 */
+.streaming-cursor {
+  display: inline;
+  animation: cursor-blink 0.8s step-end infinite;
+  color: #6366f1;
+  font-weight: bold;
+}
+@keyframes cursor-blink {
+  50% { opacity: 0; }
+}
+
+/* 工具使用提示 */
+.tool-hint {
+  font-size: 12px;
+  color: #6366f1;
+  background: #f5f3ff;
+  padding: 4px 8px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  display: inline-block;
+}
+
+/* ====== 深度研究 UI ====== */
+.research-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px 0;
+}
+.timeline-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #64748b;
+  padding: 4px 0;
+  transition: color 0.3s;
+}
+.timeline-step.active {
+  color: #6366f1;
+  font-weight: 500;
+}
+.timeline-icon { font-size: 16px; flex-shrink: 0; }
+.timeline-label { flex: 1; }
+.timeline-detail {
+  font-size: 12px;
+  color: #94a3b8;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sources-section { margin-bottom: 8px; }
+.sources-collapse {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.sources-collapse :deep(.el-collapse-item__header) {
+  font-size: 13px;
+  color: #475569;
+  height: 34px;
+  line-height: 34px;
+  padding: 0 10px;
+  background: #f8fafc;
+  border-bottom: none;
+}
+.sources-collapse :deep(.el-collapse-item__wrap) { border-bottom: none; }
+.sources-collapse :deep(.el-collapse-item__content) { padding: 6px 10px; }
+.source-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.4;
+  border-bottom: 1px dashed #f1f5f9;
+}
+.source-card:last-child { border-bottom: none; }
+.source-icon { flex-shrink: 0; }
+.source-text { flex: 1; word-break: break-word; }
+.source-link { flex: 1; word-break: break-word; color: #3b82f6; text-decoration: none; }
+.source-link:hover { text-decoration: underline; }
+
+.research-report {
+  padding-top: 4px;
+  border-top: 2px solid #e2e8f0;
+  margin-top: 6px;
+}
+
+/* 思考过程 */
 .thinking-collapse {
   margin-top: 8px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
 }
-
 .thinking-collapse :deep(.el-collapse-item__header) {
   font-size: 12px;
   color: #6366f1;
@@ -438,15 +830,8 @@ onBeforeUnmount(() => {
   background: #f5f3ff;
   border-bottom: none;
 }
-
-.thinking-collapse :deep(.el-collapse-item__wrap) {
-  border-bottom: none;
-}
-
-.thinking-collapse :deep(.el-collapse-item__content) {
-  padding: 8px 10px;
-}
-
+.thinking-collapse :deep(.el-collapse-item__wrap) { border-bottom: none; }
+.thinking-collapse :deep(.el-collapse-item__content) { padding: 8px 10px; }
 .thinking-step {
   font-size: 12px;
   color: #475569;
@@ -454,95 +839,111 @@ onBeforeUnmount(() => {
   line-height: 1.5;
   border-bottom: 1px dashed #e2e8f0;
 }
+.thinking-step:last-child { border-bottom: none; }
 
-.thinking-step:last-child {
-  border-bottom: none;
-}
-
-.chat-subtitle {
-  margin: 10px 12px 8px;
-  color: #475569;
-  font-size: 13px;
-}
-
-.chat-box {
-  margin: 0 12px;
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  scrollbar-gutter: stable;
+/* 快捷追问胶囊 */
+.suggestions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px;
 }
-
-.message {
-  padding: 8px;
-  border-radius: 8px;
-}
-
-.message.user {
-  background: #e8f1ff;
-}
-
-.message.assistant {
+.pill {
   background: #f1f5f9;
-}
-
-.message-role {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 4px 12px;
   font-size: 12px;
-  color: #334155;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.pill:hover {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+  color: #4338ca;
 }
 
-.message-text {
-  margin: 6px 0 0;
-  white-space: pre-wrap;
-  font-family: inherit;
-  font-size: 13px;
-}
-/* 👇 新增以下针对聊天框 Markdown 的样式 👇 */
-.chat-markdown {
-  white-space: normal; /* 恢复正常的自动换行 */
-  line-height: 1.6;
-}
-
-/* 使用 :deep() 穿透 scoped 限制，美化注入的 HTML */
-.chat-markdown :deep(p) {
-  margin: 0 0 8px; /* 段落之间留出呼吸感 */
-}
-.chat-markdown :deep(p:last-child) {
-  margin-bottom: 0;
-}
-.chat-markdown :deep(ul),
-.chat-markdown :deep(ol) {
-  margin: 4px 0 8px;
-  padding-left: 20px; /* 列表缩进 */
-}
-.chat-markdown :deep(li) {
-  margin-bottom: 4px;
-}
-.chat-markdown :deep(h1),
-.chat-markdown :deep(h2),
-.chat-markdown :deep(h3),
-.chat-markdown :deep(h4) {
-  margin: 12px 0 6px;
-  font-size: 14px;
-  color: #0f172a;
-}
-.chat-markdown :deep(strong) {
-  font-weight: 600;
-  color: #1e293b;
-}
-/* 👆 新增结束 👆 */
+/* 输入区域 */
 .chat-input {
   margin: 8px 12px 12px;
   padding: 10px 0 0;
   background: #ffffff;
   border-top: 1px solid #e2e8f0;
   display: grid;
-  grid-template-columns: 1fr 96px;
+  grid-template-columns: 1fr 72px;
   gap: 8px;
   flex-shrink: 0;
+  align-items: end;
+}
+
+.textarea-wrap {
+  position: relative;
+}
+.auto-textarea {
+  width: 100%;
+  min-height: 36px;
+  max-height: 120px;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  resize: none;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.auto-textarea:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+}
+/* 用户气泡内的 Markdown（白色文字） */
+.message.user .bubble :deep(a) { color: #c7d2fe; }
+.message.user .bubble :deep(strong) { color: #fff; }
+
+/* 助手气泡内的 Markdown — 紧凑学术排版 */
+.chat-markdown :deep(p) { margin: 0 0 6px; }
+.chat-markdown :deep(p:last-child) { margin-bottom: 0; }
+.chat-markdown :deep(ul),
+.chat-markdown :deep(ol) { margin: 2px 0 6px; padding-left: 18px; }
+.chat-markdown :deep(li) { margin-bottom: 2px; }
+.chat-markdown :deep(li > p) { margin: 0; } /* 防止 li 内部 p 标签撑大间距 */
+.chat-markdown :deep(h1),
+.chat-markdown :deep(h2),
+.chat-markdown :deep(h3),
+.chat-markdown :deep(h4) { margin: 8px 0 4px; font-size: 14px; color: #0f172a; }
+.chat-markdown :deep(h2:first-child),
+.chat-markdown :deep(h3:first-child) { margin-top: 0; }
+.chat-markdown :deep(strong) { font-weight: 600; color: #1e293b; }
+.chat-markdown :deep(hr) { border: none; border-top: 1px solid #e2e8f0; margin: 8px 0; }
+.chat-markdown :deep(blockquote) {
+  margin: 4px 0 6px;
+  padding: 2px 10px;
+  border-left: 3px solid #c7d2fe;
+  background: #f8fafc;
+  color: #475569;
+}
+.chat-markdown :deep(code) {
+  background: #f1f5f9;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.chat-markdown :deep(pre) {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+  margin: 4px 0 6px;
+}
+.chat-markdown :deep(pre code) {
+  background: transparent;
+  padding: 0;
 }
 
 .content-panel :deep(.el-tabs) {

@@ -125,3 +125,89 @@ async def send_code_email(email: str, code: str) -> None:
             server.starttls()
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.send_message(msg)
+
+
+# ---------------------------------------------------------------------------
+# 通知类邮件
+# ---------------------------------------------------------------------------
+async def _send_html_email(to_email: str, subject: str, html_body: str, text_body: str) -> None:
+    """通用 HTML 邮件发送，未配置 SMTP 时打印到控制台。"""
+    from ..config import get_settings
+
+    settings = get_settings()
+
+    if not settings.SMTP_HOST:
+        print(f"[通知邮件] {subject} → {to_email}\n{text_body}")
+        return
+
+    import smtplib
+    from email.mime.text import MIMEText
+
+    msg = MIMEText(html_body, "html")
+    msg["Subject"] = subject
+    msg["From"] = settings.SMTP_FROM_EMAIL
+    msg["To"] = to_email
+
+    if settings.SMTP_PORT == 465:
+        with smtplib.SMTP_SSL(settings.SMTP_HOST, 465) as server:
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.send_message(msg)
+    else:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.send_message(msg)
+
+
+async def send_template_deleted_email(
+    to_email: str, username: str | None, template_name: str
+) -> None:
+    """模板被管理员删除后通知模板所有者。"""
+    name = username or "用户"
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#f8fafc;border-radius:12px">
+      <div style="text-align:center;margin-bottom:24px">
+        <h2 style="color:#0f172a;margin:0">📄 模板删除通知</h2>
+      </div>
+      <div style="background:#fff;padding:24px;border-radius:8px;border:1px solid #e2e8f0">
+        <p>Hi {name}，</p>
+        <p>您上传的模板 <strong style="color:#dc2626">「{template_name}」</strong> 已被管理员删除。</p>
+        <p>如有疑问，请联系平台管理员。</p>
+      </div>
+      <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px">
+        <p>— AgentPaperDistiller Team</p>
+      </div>
+    </div>
+    """
+    await _send_html_email(
+        to_email=to_email,
+        subject=f"[AgentPaperDistiller] 模板删除通知 - {template_name}",
+        html_body=html,
+        text_body=f"您上传的模板「{template_name}」已被管理员删除。如有疑问请联系管理员。",
+    )
+
+
+async def send_account_deleted_email(to_email: str, username: str) -> None:
+    """用户账号被管理员删除后通知该用户。"""
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#f8fafc;border-radius:12px">
+      <div style="text-align:center;margin-bottom:24px">
+        <h2 style="color:#0f172a;margin:0">⚠️ 账号删除通知</h2>
+      </div>
+      <div style="background:#fff;padding:24px;border-radius:8px;border:1px solid #e2e8f0">
+        <p>Hi {username}，</p>
+        <p>您的 <strong>AgentPaperDistiller</strong> 账号（{to_email}）已被管理员删除。</p>
+        <p>您的所有数据（论文、模板、对话记录等）均已清除。</p>
+        <p>如有疑问，请联系平台管理员。</p>
+      </div>
+      <div style="text-align:center;margin-top:24px;color:#94a3b8;font-size:12px">
+        <p>— AgentPaperDistiller Team</p>
+      </div>
+    </div>
+    """
+    await _send_html_email(
+        to_email=to_email,
+        subject="[AgentPaperDistiller] 账号删除通知",
+        html_body=html,
+        text_body=f"您的 AgentPaperDistiller 账号（{to_email}）已被管理员删除。如有疑问请联系管理员。",
+    )

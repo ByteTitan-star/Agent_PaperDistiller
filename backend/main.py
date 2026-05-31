@@ -1,6 +1,14 @@
 """
 FastAPI 应用入口
 """
+import os
+os.environ["HF_HUB_OFFLINE"] = "1"
+
+# 加载 .env 文件到 os.environ（pydantic-settings 的 load_dotenv 不会注入 os.environ）
+from dotenv import load_dotenv
+_env = os.getenv("APP_ENV", "dev")
+load_dotenv(f".env.{_env}", encoding="utf-8")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -30,4 +38,4 @@ app.include_router(papers.router, prefix=settings.api_prefix)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8001, reload=True)

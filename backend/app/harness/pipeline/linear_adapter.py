@@ -36,8 +36,10 @@ class LinearAdapter:
         target_language: str,
         template_name: str,
         tracer: Tracer,
+        settings: HarnessSettings | None = None,
     ) -> list[str]:
         """Execute the linear pipeline, wrapped in a trace span."""
+        effective_settings = settings or self.settings
         tracer.start_span("linear_pipeline")
 
         self.event_bus.emit(
@@ -53,7 +55,7 @@ class LinearAdapter:
                 template_name=template_name,
                 storage=self.storage,
                 broker=self.broker,
-                settings=self.settings,
+                settings=effective_settings,
             )
             tracer.end_span("ok", {"tags": tags})
             self.event_bus.emit(

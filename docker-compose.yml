@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: apd-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-paper_distiller}
+      MYSQL_USER: ${MYSQL_USER:-apd}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-apd123456}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 后端 + 前端
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apd-app
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      APP_ENV: prod
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${MYSQL_USER:-apd}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-apd123456}
+      DB_NAME: ${MYSQL_DATABASE:-paper_distiller}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      OSS_ENABLED: ${OSS_ENABLED:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - app_data:/app/data
+      - app_logs:/app/logs
+
+volumes:
+  mysql_data:
+  app_data:
+  app_logs:

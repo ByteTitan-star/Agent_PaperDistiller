@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # 展示字段
     llm_model_name: str = "DeepSeek-Agent"
-    embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model_name: str = "models/all-MiniLM-L6-v2"
     model_provider: str = "DeepSeek+LocalTools"
     pipeline_mode: str = "LangGraph-RAG-Agent"
     generation_model_name: str = "DeepSeek-V3"
@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     agent_skills_dir: str = "skills"  # relative to backend/app/
     skills_collection_name: str = "skills_collection"
     skill_retrieval_top_k: int = 5
+    skill_similarity_threshold: float = 0.4
 
     # LangGraph + ToT
     langgraph_enabled: bool = True
@@ -69,12 +70,20 @@ class Settings(BaseSettings):
     tavily_search_depth: str = "basic"
     tavily_max_results: int = 3
 
+    # Alibaba Cloud OSS
+    oss_enabled: bool = True
+    oss_access_key_id: str = ""
+    oss_access_key_secret: str = ""
+    oss_endpoint: str = "https://oss-cn-beijing.aliyuncs.com"
+    oss_bucket_name: str = "agentpaper"
+    oss_prefix: str = "papers"  # OSS 对象前缀
+
     # ReAct Deep Search
     react_max_rounds: int = 5
     react_enable_clarification: bool = True
 
     # Database
-    DATABASE_URL: str = "mysql+asyncmy://root:root223@localhost:3306/AgentPaperDistriller"
+    DATABASE_URL: str = "mysql+asyncmy://root:root223@localhost:3306/AgentPaperDistriller?charset=utf8mb4"
 
     # Security
     SECRET_KEY: str = "change-me-in-production-use-a-long-random-string"
@@ -92,6 +101,7 @@ class Settings(BaseSettings):
         env_file=f".env.{os.getenv('APP_ENV', 'dev')}",
         env_file_encoding="utf-8",
         extra="ignore",
+        load_dotenv=True,
     )
 
     @property

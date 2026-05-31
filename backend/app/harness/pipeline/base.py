@@ -61,8 +61,10 @@ class PipelineHarness:
         title: str,
         target_language: str,
         template_name: str,
+        settings: HarnessSettings | None = None,
     ) -> list[str]:
         """Execute the pipeline, choosing LangGraph or linear adapter."""
+        effective_settings = settings or self.settings
         tracer = Tracer()
         self._emit("before_step", {"task_id": task_id, "paper_id": paper_id})
 
@@ -81,7 +83,7 @@ class PipelineHarness:
         try:
             tags: list[str] = []
 
-            if self.settings.langgraph_enabled:
+            if effective_settings.langgraph_enabled:
                 try:
                     initial_state = {
                         "task_id": task_id,
@@ -89,18 +91,20 @@ class PipelineHarness:
                         "title": title,
                         "target_language": target_language,
                         "template_name": template_name,
-                        "generation_model_name": self.settings.generation_model_name,
-                        "evaluation_model_name": self.settings.evaluation_model_name,
+                        "generation_model_name": effective_settings.generation_model_name,
+                        "evaluation_model_name": effective_settings.evaluation_model_name,
                     }
-                    tags = await self.langgraph_adapter.run(initial_state, tracer)
+                    tags = await self.langgraph_adapter.run(initial_state, tracer, settings=effective_settings)
                 except Exception:
                     # Fallback to linear
                     tags = await self.linear_adapter.run(
                         task_id, paper_id, title, target_language, template_name, tracer,
+                        settings=effective_settings,
                     )
             else:
                 tags = await self.linear_adapter.run(
                     task_id, paper_id, title, target_language, template_name, tracer,
+                    settings=effective_settings,
                 )
 
             self._emit("on_complete", {"task_id": task_id, "tags": tags})

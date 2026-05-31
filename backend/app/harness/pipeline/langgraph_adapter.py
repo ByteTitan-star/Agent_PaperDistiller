@@ -28,14 +28,15 @@ class LangGraphAdapter:
         self.settings = settings
         self.event_bus = event_bus
 
-    async def run(self, initial_state: dict[str, Any], tracer: Tracer) -> list[str]:
+    async def run(self, initial_state: dict[str, Any], tracer: Tracer, settings: HarnessSettings | None = None) -> list[str]:
         """Execute the LangGraph pipeline, wrapped in a trace span."""
+        effective_settings = settings or self.settings
         tracer.start_span("langgraph_pipeline")
 
         graph = build_pipeline_graph(
             storage=self.storage,
             broker=self.broker,
-            settings=self.settings,
+            settings=effective_settings,
         )
         if graph is None:
             tracer.end_span("skipped", {"reason": "LangGraph not available"})

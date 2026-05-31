@@ -1,21 +1,22 @@
 import asyncio
 import datetime as dt
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.dependencies import get_current_user
 from ..config import get_settings
 from ..database import get_db
 from ..dependencies import broker
-from ..models import Paper, User
+from ..models import TaskRecord, User
 from ..schemas import UploadResponse
 from ..services.pdf_utils import try_extract_title
 from ..storage import domain_tag_from_template
 from ..worker import execute_pipeline
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["upload"])
 settings = get_settings()
 
@@ -24,7 +25,7 @@ settings = get_settings()
 async def upload_paper(
     file: UploadFile = File(...),
     target_language: str = Form(default="Chinese"),
-    summary_template: str = Form(default="tinghua.md"),
+    summary_template: str = Form(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UploadResponse:
@@ -32,6 +33,9 @@ async def upload_paper(
         raise HTTPException(status_code=400, detail="仅支持上传 PDF 文件。")
 
     from ..dependencies import storage
+
+    if not summary_template:
+        summary_template = storage.default_template
 
     file_content = await file.read()
     title_candidate = try_extract_title(file_content, file.filename)
@@ -46,6 +50,8 @@ async def upload_paper(
 
     output_dir = str(storage.paper_output_dir(paper_id))
     pdf_path = str(storage.pdf_path(paper_id))
+
+    from ..models import Paper
 
     paper = Paper(
         paper_id=paper_id,
@@ -63,6 +69,16 @@ async def upload_paper(
     )
     db.add(paper)
 
+    task_record = TaskRecord(
+        task_id=task_id,
+        paper_id=paper_id,
+        status="queued",
+        progress=0,
+        message="任务已创建，正在排队",
+    )
+    db.add(task_record)
+    await db.flush()
+
     await broker.create(
         task_id,
         paper_id,
@@ -73,6 +89,10 @@ async def upload_paper(
             f"{settings.generation_model_name} (Gen) + {settings.evaluation_model_name} (Eval)"
         ),
     )
+    logger.info(
+        "Upload accepted: task_id=%s paper_id=%s file=%s template=%s user_id=%d",
+        task_id, paper_id, file.filename, summary_template, user.id,
+    )
     asyncio.create_task(
         execute_pipeline(
             task_id=task_id,
@@ -80,6 +100,7 @@ async def upload_paper(
             title=title_candidate,
             target_language=target_language,
             template_name=summary_template,
+            user_id=user.id,
         )
     )
     return UploadResponse(task_id=task_id, paper_id=paper_id)

@@ -1,6 +1,9 @@
 # 	LangGraph工作流/线性流水线
 import asyncio
+import logging
 from typing import Any, TypedDict
+
+logger = logging.getLogger(__name__)
 
 from ..config import Settings
 from .document_parser import chunk_text, extract_text_from_pdf, split_text_into_sections
@@ -11,7 +14,7 @@ from .renderer import (
     make_translation_markdown,
 )
 from .state_broker import TaskBroker
-from ..storage import Storage
+from ..storage import Storage, resolve_template_content
 from .tot_generator import build_multi_agent_collaboration_label
 from .translator import flatten_sections_to_chunks, translate_sections
 from .llm_extractor import infer_domain_tags
@@ -57,6 +60,7 @@ class PaperState(TypedDict, total=False):
     title: str
     target_language: str
     template_name: str
+    user_id: int
     generation_model_name: str
     evaluation_model_name: str
     collaboration_mode: str
@@ -213,8 +217,10 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
         translated_sections = state.get("translated_sections", []) or state.get("sections", [])
         translated_chunks = flatten_sections_to_chunks(translated_sections)
         tags = infer_domain_tags(state.get("text", ""), state["template_name"])
-        # 读模版内容
-        template_text = await asyncio.to_thread(storage.read_template, state["template_name"])
+        # 读模版内容：优先从 DB，回退到文件系统
+        template_text = await resolve_template_content(
+            state["template_name"], state.get("user_id")
+        ) or await asyncio.to_thread(storage.read_template, state["template_name"])
 
         summary_md = await asyncio.to_thread(
             make_summary_markdown,
@@ -226,6 +232,7 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
             state.get("chunks", []),
             translated_chunks,
             state.get("text", ""),
+            settings,
         )
         await asyncio.to_thread(
             storage.write_result, state["paper_id"], "summary", summary_md, state["template_name"]
@@ -298,6 +305,7 @@ async def run_pipeline_linear(
     storage: Storage,
     broker: TaskBroker,
     settings: Settings,
+    user_id: int | None = None,
 ) -> list[str]:
     """
     【线性流水线】
@@ -324,9 +332,11 @@ async def run_pipeline_linear(
     """
     collaboration_mode = build_multi_agent_collaboration_label(settings)
     execution_order = "先生成 -> 后评估 -> 再 ToT 分支扩展与剪枝"
+    logger.info("[Linear] Step 1/4 - Parsing PDF: task_id=%s paper_id=%s", task_id, paper_id)
     await broker.update(task_id, "parsing", 15, "正在解析 PDF 文本。")
     text = await asyncio.to_thread(extract_text_from_pdf, storage.pdf_path(paper_id))
     sections = split_text_into_sections(text)
+    logger.info("[Linear] PDF parsed: text_len=%d sections=%d", len(text), len(sections))
 
     chunks = await asyncio.to_thread(
         chunk_text,
@@ -336,7 +346,7 @@ async def run_pipeline_linear(
     )
     await asyncio.to_thread(storage.save_chunks, paper_id, chunks)
     await asyncio.sleep(0.1)
-
+    logger.info("[Linear] Step 2/4 - Translating: task_id=%s chunks=%d", task_id, len(chunks))
     await broker.update(task_id, "translating", 45, "正在进行全文翻译。")
     translated_sections, translation_failures = await asyncio.to_thread(
         translate_sections,
@@ -344,6 +354,7 @@ async def run_pipeline_linear(
         target_language,
     )
     if translation_failures > 0 and settings.pipeline_translation_retry_limit > 0:
+        logger.warning("[Linear] Translation has %d failures, retrying: task_id=%s", translation_failures, task_id)
         await broker.update(task_id, "translating", 55, "翻译出现失败段，正在自动重试。")
         translated_sections, translation_failures = await asyncio.to_thread(
             translate_sections,
@@ -369,10 +380,15 @@ async def run_pipeline_linear(
     layout_path = storage.paper_output_dir(paper_id) / "translated_layout.html"
     await asyncio.to_thread(layout_path.write_text, layout_html, "utf-8")
     await asyncio.sleep(0.1)
+    logger.info("[Linear] Translation done: failures=%d", translation_failures)
 
     translated_chunks = flatten_sections_to_chunks(translated_sections)
     tags = infer_domain_tags(text, template_name)
-    template_text = await asyncio.to_thread(storage.read_template, template_name)
+    template_text = await resolve_template_content(
+        template_name, user_id
+    ) or await asyncio.to_thread(storage.read_template, template_name)
+    logger.info("[Linear] Step 3/4 - Summarizing: task_id=%s tags=%s template_loaded=%s",
+                task_id, tags, bool(template_text))
 
     await broker.update(task_id, "summarizing", 70, "正在提取核心摘要。")
     summary_md = await asyncio.to_thread(
@@ -385,9 +401,11 @@ async def run_pipeline_linear(
         chunks,
         translated_chunks,
         text,
+        settings,
     )
     await asyncio.to_thread(storage.write_result, paper_id, "summary", summary_md, template_name)
     await asyncio.sleep(0.1)
+    logger.info("[Linear] Step 4/4 - Critiquing: task_id=%s", task_id)
 
     await broker.update(
         task_id,
@@ -407,6 +425,7 @@ async def run_pipeline_linear(
     await asyncio.sleep(0.1)
 
     await broker.update(task_id, "done", 100, f"任务已完成。{collaboration_mode}")
+    logger.info("[Linear] Pipeline completed: task_id=%s tags=%s", task_id, tags)
     return tags
 
 
@@ -419,6 +438,7 @@ async def run_pipeline(
     storage: Storage,
     broker: TaskBroker,
     settings: Settings,
+    user_id: int | None = None,
 ) -> list[str]:
     """
     【执行主流水线】
@@ -445,6 +465,7 @@ async def run_pipeline(
     """
     graph = build_pipeline_graph(storage=storage, broker=broker, settings=settings)
     if graph is None:
+        logger.info("LangGraph not available, using linear pipeline: task_id=%s", task_id)
         return await run_pipeline_linear(
             task_id=task_id,
             paper_id=paper_id,
@@ -454,6 +475,7 @@ async def run_pipeline(
             storage=storage,
             broker=broker,
             settings=settings,
+            user_id=user_id,
         )
 
     initial_state: PaperState = {
@@ -462,15 +484,23 @@ async def run_pipeline(
         "title": title,
         "target_language": target_language,
         "template_name": template_name,
+        "user_id": user_id or 0,
         "generation_model_name": settings.generation_model_name,
         "evaluation_model_name": settings.evaluation_model_name,
         "collaboration_mode": build_multi_agent_collaboration_label(settings),
     }
 
     try:
+        logger.info("Running LangGraph pipeline: task_id=%s", task_id)
         result = await graph.ainvoke(initial_state)
-        return list(result.get("tags", [])) if isinstance(result, dict) else []
-    except Exception:
+        tags = list(result.get("tags", [])) if isinstance(result, dict) else []
+        logger.info("LangGraph pipeline completed: task_id=%s tags=%s", task_id, tags)
+        return tags
+    except Exception as exc:
+        logger.warning(
+            "LangGraph pipeline failed, falling back to linear: task_id=%s error=%s",
+            task_id, exc, exc_info=True,
+        )
         return await run_pipeline_linear(
             task_id=task_id,
             paper_id=paper_id,

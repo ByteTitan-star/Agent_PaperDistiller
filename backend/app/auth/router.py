@@ -204,3 +204,36 @@ async def change_status(
     user.is_active = is_active
     await db.flush()
     return {"message": f"用户 {user.username} 状态已更新"}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """管理员删除用户，删除前邮件通知该用户。"""
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="不能删除自己的账号")
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    target_email = user.email
+    target_name = user.username
+
+    # 先发通知邮件，再删除
+    from .email_service import send_account_deleted_email
+    await send_account_deleted_email(target_email, target_name)
+
+    # 手动级联删除关联数据（MySQL 外键无 CASCADE）
+    from ..models import ChatSession, Paper, Template, UserApiConfig
+    for model in [Paper, Template, ChatSession, UserApiConfig]:
+        rows = await db.execute(select(model).where(model.user_id == user_id))
+        for row in rows.scalars().all():
+            await db.delete(row)
+
+    await db.delete(user)
+    await db.flush()
+    return {"message": f"用户 {target_name} 已删除"}

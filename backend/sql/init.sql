@@ -67,7 +67,7 @@ CREATE TABLE papers (
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------
--- 3. 模板表
+-- 3. 模板表（支持用户私有模板和管理员公开模板）
 -- ----------------------------------------------------------
 CREATE TABLE templates (
     id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -75,10 +75,15 @@ CREATE TABLE templates (
     content         LONGTEXT        NOT NULL,
     domain_tag      VARCHAR(100)    DEFAULT 'General',
     is_default      TINYINT(1)      NOT NULL DEFAULT 0,
+    user_id         BIGINT UNSIGNED DEFAULT NULL,               -- NULL = 公开模板，非 NULL = 用户私有
+    is_system       TINYINT(1)      NOT NULL DEFAULT 0,         -- 系统内置模板不可删除/编辑
     created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-    UNIQUE KEY uk_name (name)
+    UNIQUE KEY uq_user_name (user_id, name),
+    INDEX idx_user_id (user_id),
+    INDEX idx_is_system (is_system),
+    CONSTRAINT fk_templates_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------
@@ -203,6 +208,25 @@ CREATE TABLE email_verifications (
     INDEX idx_email_token (email, token),
     INDEX idx_expires (expires_at)
 ) ENGINE=InnoDB;
+
+
+CREATE TABLE token_usage_logs (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id    BIGINT          DEFAULT NULL,
+    model_name VARCHAR(100)    NOT NULL,
+    prompt_tokens     INT      NOT NULL DEFAULT 0,
+    completion_tokens INT      NOT NULL DEFAULT 0,
+    total_tokens      INT      NOT NULL DEFAULT 0,
+    action_type       VARCHAR(100) NOT NULL DEFAULT 'chat',
+    detail     JSON            DEFAULT NULL,
+    created_at DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_token_user   (user_id),
+    INDEX idx_token_model  (model_name),
+    INDEX idx_token_action (action_type),
+    INDEX idx_token_created(created_at)
+);
+
+
 
 -- ============================================================
 -- 初始数据

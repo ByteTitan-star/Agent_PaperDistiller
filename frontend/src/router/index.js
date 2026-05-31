@@ -19,19 +19,51 @@ const router = createRouter({
   ],
 });
 
-// 路由守卫：未登录跳转 /login，非管理员访问 /admin 跳转 /dashboard
-router.beforeEach((to, from, next) => {
+// 是否已验证过 token 有效性（带 TTL，避免过期 token 绕过守卫）
+let tokenVerified = false;
+let tokenVerifiedAt = 0;
+const TOKEN_VERIFY_TTL_MS = 5 * 60 * 1000; // 5 分钟后重新验证
+
+export function resetTokenVerified() {
+  tokenVerified = false;
+  tokenVerifiedAt = 0;
+}
+
+router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem("access_token");
   const user = JSON.parse(localStorage.getItem("user") || "null");
 
+  // 无 token，需要登录
+  if (!token) {
+    tokenVerified = false;
+    if (to.meta.guest || to.path === "/login") return next();
+    return next("/login");
+  }
+
+  // 有 token 但未验证有效性（或验证已过期），先验证
+  if (!tokenVerified || Date.now() - tokenVerifiedAt > TOKEN_VERIFY_TTL_MS) {
+    try {
+      const { getMe } = await import("../api/client");
+      await getMe();
+      tokenVerified = true;
+      tokenVerifiedAt = Date.now();
+    } catch {
+      // token 无效，清空并跳转登录
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("user");
+      tokenVerified = false;
+      tokenVerifiedAt = 0;
+      return next("/login");
+    }
+  }
+
+  // admin 路由权限
   if (to.meta.admin && user?.role !== "admin") {
     return next("/dashboard");
   }
-  if (to.meta.guest && token) {
+  // 已登录访问登录页，重定向
+  if (to.meta.guest) {
     return next("/dashboard");
-  }
-  if (!to.meta.guest && !token && to.path !== "/login") {
-    return next("/login");
   }
   next();
 });

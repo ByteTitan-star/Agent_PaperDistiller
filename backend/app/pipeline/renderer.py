@@ -144,6 +144,7 @@ def make_summary_markdown(
     source_chunks: list[str],
     translated_chunks: list[str],
     text: str,
+    settings: Settings | None = None,
 ) -> str:
     """
     【生成摘要 Markdown】
@@ -172,7 +173,7 @@ def make_summary_markdown(
     evidence = [chunk[:260] for chunk in display_chunks[:4]]
 
     if template_domain == "Backdoor Attack":
-        structured = extract_backdoor_structured_info(text, title)
+        structured = extract_backdoor_structured_info(text, title, settings=settings)
 
         signals = extract_backdoor_indicators(text)
         poison_rate = (

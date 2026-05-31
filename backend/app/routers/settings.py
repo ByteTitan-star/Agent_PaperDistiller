@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.crypto import aes_decrypt, aes_encrypt
@@ -145,6 +145,13 @@ async def update_system_settings(
                 description=item.description,
             ))
     await db.flush()
+
+    # 热更新运行时配置
+    from ..main import storage
+    for item in body.settings:
+        if item.setting_key == "default_template" and item.setting_value:
+            storage.default_template = item.setting_value
+
     return {"message": "系统配置已更新"}
 
 
@@ -159,9 +166,6 @@ async def admin_list_papers(
     from ..schemas import PaperMeta
     from ..storage import domain_tag_from_template, unique_keep_order
 
-    result = await db.execute(select(UserApiConfig.__class__.__mro__[0]).order_by(
-        __import__("sqlalchemy").desc("created_at") if False else User.id
-    ))
     # Simple query for all papers
     from ..models import Paper
     result = await db.execute(select(Paper).order_by(Paper.created_at.desc()))
@@ -194,3 +198,189 @@ async def admin_delete_paper(
         raise HTTPException(status_code=404, detail="论文不存在")
     await db.delete(paper)
     return {"message": "论文已删除"}
+
+
+# ---------------------------------------------------------------------------
+# Admin: Token Usage Statistics
+# ---------------------------------------------------------------------------
+@router.get("/admin/token-stats/overview")
+async def token_stats_overview(
+    period: str = Query(default="daily", regex="^(daily|weekly|monthly)$"),
+    start_date: str | None = Query(default=None),
+    end_date: str | None = Query(default=None),
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """系统级 Token 用量概览：总量、按模型分布、按日期趋势。"""
+    from ..models import TokenUsageLog
+
+    filters = []
+    if start_date:
+        filters.append(TokenUsageLog.created_at >= start_date)
+    if end_date:
+        filters.append(TokenUsageLog.created_at <= end_date + " 23:59:59")
+
+    # 汇总
+    q = select(
+        func.sum(TokenUsageLog.prompt_tokens).label("total_prompt"),
+        func.sum(TokenUsageLog.completion_tokens).label("total_completion"),
+        func.sum(TokenUsageLog.total_tokens).label("total_tokens"),
+        func.count(TokenUsageLog.id).label("total_calls"),
+    )
+    for f in filters:
+        q = q.where(f)
+    result = await db.execute(q)
+    row = result.one()
+
+    # 按模型分布
+    q_model = select(
+        TokenUsageLog.model_name,
+        func.sum(TokenUsageLog.total_tokens).label("tokens"),
+    )
+    for f in filters:
+        q_model = q_model.where(f)
+    q_model = q_model.group_by(TokenUsageLog.model_name)
+    model_result = await db.execute(q_model)
+
+    # 按日期趋势
+    if period == "daily":
+        date_expr = func.date(TokenUsageLog.created_at)
+    elif period == "weekly":
+        date_expr = func.yearweek(TokenUsageLog.created_at)
+    else:
+        date_expr = func.date_format(TokenUsageLog.created_at, "%Y-%m")
+    q_trend = select(
+        date_expr.label("period"),
+        func.sum(TokenUsageLog.total_tokens).label("tokens"),
+        func.sum(TokenUsageLog.prompt_tokens).label("prompt"),
+        func.sum(TokenUsageLog.completion_tokens).label("completion"),
+    )
+    for f in filters:
+        q_trend = q_trend.where(f)
+    q_trend = q_trend.group_by("period").order_by("period")
+    trend_result = await db.execute(q_trend)
+
+    # 按操作类型
+    q_action = select(
+        TokenUsageLog.action_type,
+        func.sum(TokenUsageLog.total_tokens).label("tokens"),
+    )
+    for f in filters:
+        q_action = q_action.where(f)
+    q_action = q_action.group_by(TokenUsageLog.action_type)
+    action_result = await db.execute(q_action)
+
+    return {
+        "totals": {
+            "prompt": int(row.total_prompt or 0),
+            "completion": int(row.total_completion or 0),
+            "total": int(row.total_tokens or 0),
+            "calls": int(row.total_calls or 0),
+        },
+        "by_model": [
+            {"model": r.model_name, "tokens": int(r.tokens or 0)}
+            for r in model_result
+        ],
+        "by_date": [
+            {"period": str(r.period), "tokens": int(r.tokens or 0),
+             "prompt": int(r.prompt or 0), "completion": int(r.completion or 0)}
+            for r in trend_result
+        ],
+        "by_action": [
+            {"action": r.action_type, "tokens": int(r.tokens or 0)}
+            for r in action_result
+        ],
+    }
+
+
+@router.get("/admin/token-stats/users")
+async def token_stats_users(
+    start_date: str | None = Query(default=None),
+    end_date: str | None = Query(default=None),
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """所有用户的 Token 用量排行。"""
+    from ..models import TokenUsageLog, User as UserModel
+
+    filters = []
+    if start_date:
+        filters.append(TokenUsageLog.created_at >= start_date)
+    if end_date:
+        filters.append(TokenUsageLog.created_at <= end_date + " 23:59:59")
+
+    q = (
+        select(
+            TokenUsageLog.user_id,
+            UserModel.username,
+            UserModel.email,
+            func.sum(TokenUsageLog.total_tokens).label("total_tokens"),
+            func.count(TokenUsageLog.id).label("calls"),
+        )
+        .outerjoin(UserModel, TokenUsageLog.user_id == UserModel.id)
+        .group_by(TokenUsageLog.user_id, UserModel.username, UserModel.email)
+        .order_by(func.sum(TokenUsageLog.total_tokens).desc())
+    )
+    for f in filters:
+        q = q.where(f)
+    result = await db.execute(q)
+
+    return [
+        {
+            "user_id": r.user_id,
+            "username": r.username or "未知",
+            "email": r.email or "",
+            "total_tokens": int(r.total_tokens or 0),
+            "calls": int(r.calls or 0),
+        }
+        for r in result
+    ]
+
+
+@router.get("/admin/token-stats/users/{user_id}")
+async def token_stats_user_detail(
+    user_id: int,
+    period: str = Query(default="daily", regex="^(daily|weekly|monthly)$"),
+    start_date: str | None = Query(default=None),
+    end_date: str | None = Query(default=None),
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """单个用户的 Token 用量明细。"""
+    from ..models import TokenUsageLog
+
+    filters = [TokenUsageLog.user_id == user_id]
+    if start_date:
+        filters.append(TokenUsageLog.created_at >= start_date)
+    if end_date:
+        filters.append(TokenUsageLog.created_at <= end_date + " 23:59:59")
+
+    if period == "daily":
+        date_expr = func.date(TokenUsageLog.created_at)
+    elif period == "weekly":
+        date_expr = func.yearweek(TokenUsageLog.created_at)
+    else:
+        date_expr = func.date_format(TokenUsageLog.created_at, "%Y-%m")
+
+    q = select(
+        date_expr.label("period"),
+        func.sum(TokenUsageLog.total_tokens).label("tokens"),
+        func.sum(TokenUsageLog.prompt_tokens).label("prompt"),
+        func.sum(TokenUsageLog.completion_tokens).label("completion"),
+        func.count(TokenUsageLog.id).label("calls"),
+    )
+    for f in filters:
+        q = q.where(f)
+    q = q.group_by("period").order_by("period")
+    result = await db.execute(q)
+
+    return [
+        {
+            "period": str(r.period),
+            "tokens": int(r.tokens or 0),
+            "prompt": int(r.prompt or 0),
+            "completion": int(r.completion or 0),
+            "calls": int(r.calls or 0),
+        }
+        for r in result
+    ]

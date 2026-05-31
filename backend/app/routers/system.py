@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from ..config import get_settings
-from ..dependencies import skill_registry
+from ..dependencies import get_skill_registry
 from ..schemas import SystemInfoResponse
 
 router = APIRouter(tags=["system"])
@@ -14,6 +14,7 @@ async def get_system_info() -> SystemInfoResponse:
         f"Multi-Agent Collaboration: "
         f"{settings.generation_model_name} (Gen) + {settings.evaluation_model_name} (Eval)"
     )
+    skill_registry = get_skill_registry()
     skill_status = skill_registry.status()
     return SystemInfoResponse(
         app_name=settings.app_name,

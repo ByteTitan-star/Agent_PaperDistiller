@@ -27,9 +27,6 @@ RESULT_FILE_MAP: dict[ResultKind, str] = {
     "improvement": "improvements.md",         # 改进建议
 }
 
-# 提取论文ID前缀数字的正则（如 "1.paper_title" -> "1"）
-PAPER_ID_PREFIX_RE = re.compile(r"^(\d+)")
-
 # 模板文件名到领域标签的映射
 TEMPLATE_DOMAIN_MAP: dict[str, str] = {
     "tinghua": "General",
@@ -108,6 +105,74 @@ def unique_keep_order(values: list[str]) -> list[str]:
         seen.add(value)
         ordered.append(value)
     return ordered
+
+
+class OSSClient:
+    """阿里云 OSS 封装，支持上传、下载、签名 URL、删除。"""
+
+    def __init__(
+        self,
+        access_key_id: str,
+        access_key_secret: str,
+        endpoint: str,
+        bucket_name: str,
+        prefix: str = "papers",
+    ) -> None:
+        self._bucket_name = bucket_name
+        self._prefix = prefix.strip("/")
+        self._bucket = None
+        if access_key_id and access_key_secret:
+            try:
+                import oss2
+                auth = oss2.Auth(access_key_id, access_key_secret)
+                self._bucket = oss2.Bucket(auth, endpoint, bucket_name)
+            except ImportError:
+                pass
+
+    @property
+    def available(self) -> bool:
+        return self._bucket is not None
+
+    def _key(self, *parts: str) -> str:
+        return "/".join([self._prefix, *parts])
+
+    def upload_file(self, local_path: Path, *key_parts: str) -> str:
+        """上传本地文件到 OSS，返回对象 key。"""
+        if not self._bucket:
+            return ""
+        key = self._key(*key_parts)
+        self._bucket.put_object_from_file(key, str(local_path))
+        return key
+
+    def upload_bytes(self, data: bytes, content_type: str, *key_parts: str) -> str:
+        """上传字节数据到 OSS。"""
+        if not self._bucket:
+            return ""
+        key = self._key(*key_parts)
+        headers = {"Content-Type": content_type}
+        self._bucket.put_object(key, data, headers=headers)
+        return key
+
+    def get_signed_url(self, *key_parts: str, expires: int = 3600) -> str:
+        """生成签名下载 URL，默认 1 小时有效。"""
+        if not self._bucket:
+            return ""
+        key = self._key(*key_parts)
+        return self._bucket.sign_url("GET", key, expires)
+
+    def delete_prefix(self, *key_parts: str) -> None:
+        """删除指定前缀下的所有对象。"""
+        if not self._bucket:
+            return
+        prefix = self._key(*key_parts) + "/"
+        for obj in oss2.ObjectIterator(self._bucket, prefix=prefix):
+            self._bucket.delete_object(obj.key)
+
+    def exists(self, *key_parts: str) -> bool:
+        if not self._bucket:
+            return False
+        key = self._key(*key_parts)
+        return self._bucket.object_exists(key)
 
 
 
@@ -347,12 +412,15 @@ class Storage:
         vector_db_subdir: str = "vectordb",                # 向量库子目录
         embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",  # 嵌入模型
         vector_distance_metric: str = "cosine",            # 距离度量
+        oss_client: OSSClient | None = None,               # OSS 客户端（可选）
     ) -> None:
         self.base_dir = base_dir
         self.raw_dir = self.base_dir / "raw"               # 原始上传PDF
         self.processed_dir = self.base_dir / "processed"   # 处理结果
         self.meta_file = self.base_dir / "papers.json"     # 论文元数据
         self.templates_dir = templates_dir                 # 模板文件
+        self.default_template: str = DEFAULT_SUMMARY_TEMPLATE  # 可在启动时从 DB 覆盖
+        self.oss = oss_client                              # OSS 客户端
         
         # 确保目录结构存在
         self._ensure_structure()
@@ -422,37 +490,16 @@ class Storage:
         payload = json.dumps(papers, ensure_ascii=False, indent=2)
         self.meta_file.write_text(make_utf8_safe(payload), encoding="utf-8")
 
-    def _next_paper_sequence(self) -> int:
-        """
-        计算下一个论文序号。
-        
-        扫描现有paper_id（格式：数字.标题），找出最大序号+1。
-        用于生成递增的论文ID前缀。
-        """
-        papers = self._load_papers()
-        max_seq = 0
-        pattern = re.compile(r"^(\d+)\.")
-
-        for paper in papers:
-            paper_id = paper.get("paper_id", "")
-            match = pattern.match(paper_id)
-            if not match:
-                continue
-            seq = int(match.group(1))
-            if seq > max_seq:
-                max_seq = seq
-        return max_seq + 1
-
     def allocate_paper_id(self, title: str) -> str:
         """
         为新论文分配唯一ID。
-        
-        格式：{序号}.{清理后的标题}
-        例："3.Attention_Is_All_You_Need"
+
+        格式：{短UUID}  (8位hex，无重复风险)
+        例："a3f1b2c4"
         """
-        seq = self._next_paper_sequence()
-        safe_title = re.sub(r'[\\/*?:"<>|]', "", title).strip()
-        return f"{seq}.{safe_title}"
+        import uuid
+
+        return uuid.uuid4().hex[:8]
 
     def list_papers(self) -> list[PaperMeta]:
         """
@@ -504,7 +551,7 @@ class Storage:
             item["status"] = status
             if domain_tags is None:
                 continue
-            template_name = str(item.get("summary_template", DEFAULT_SUMMARY_TEMPLATE))
+            template_name = str(item.get("summary_template", self.default_template))
             template_tag = domain_tag_from_template(template_name)
             item["domain_tags"] = unique_keep_order([template_tag, *domain_tags])
         self._save_papers(papers)
@@ -537,18 +584,36 @@ class Storage:
         if source_filename:
             source_name_file = self.paper_output_dir(paper_id) / "source_filename.txt"
             source_name_file.write_text(make_utf8_safe(source_filename), encoding="utf-8")
+
+        # 上传到 OSS
+        self._upload_to_oss(output_pdf, paper_id, "source.pdf")
         return output_pdf
 
     def pdf_path(self, paper_id: str) -> Path:
         """
         获取论文PDF路径。
-        
+
         优先返回processed目录，如果不存在则回退到raw目录。
         """
         preferred = self.processed_dir / paper_id / "source.pdf"
         if preferred.exists():
             return preferred
         return self.raw_dir / f"{paper_id}.pdf"
+
+    def oss_pdf_signed_url(self, paper_id: str, expires: int = 3600) -> str | None:
+        """获取 PDF 的 OSS 签名 URL，不可用时返回 None。"""
+        if not self.oss or not self.oss.available:
+            return None
+        return self.oss.get_signed_url(paper_id, "source.pdf", expires=expires)
+
+    def _upload_to_oss(self, local_path: Path, *key_parts: str) -> None:
+        """异步安全地将本地文件上传到 OSS（失败不阻塞）。"""
+        if not self.oss or not self.oss.available:
+            return
+        try:
+            self.oss.upload_file(local_path, *key_parts)
+        except Exception:
+            pass
 
     def paper_output_dir(self, paper_id: str) -> Path:
         """
@@ -562,8 +627,8 @@ class Storage:
 
     def _summary_output_name(self, summary_template: str | None = None) -> str:
         """根据模板名生成摘要结果文件名"""
-        template_name = Path(summary_template or DEFAULT_SUMMARY_TEMPLATE).name
-        template_stem = Path(template_name).stem or Path(DEFAULT_SUMMARY_TEMPLATE).stem
+        template_name = Path(summary_template or self.default_template).name
+        template_stem = Path(template_name).stem or Path(self.default_template).stem
         return f"summary_{template_stem}.md"
 
     def _result_output_name(self, kind: ResultKind, summary_template: str | None = None) -> str:
@@ -582,6 +647,7 @@ class Storage:
         """将处理结果写入文件"""
         output_file = self.paper_output_dir(paper_id) / self._result_output_name(kind, summary_template)
         output_file.write_text(make_utf8_safe(content), encoding="utf-8")
+        self._upload_to_oss(output_file, paper_id, output_file.name)
 
     def read_result(self, paper_id: str, kind: ResultKind, summary_template: str | None = None) -> str:
         """读取处理结果，如果不存在返回空字符串"""
@@ -641,12 +707,41 @@ class Storage:
 
     def read_template(self, template_name: str) -> str:
         """
-        读取模板内容，如果不存在返回默认模板。
-        
+        读取模板内容（文件系统），如果不存在返回默认模板。
+
         安全措施：使用Path.name防止路径遍历攻击。
         """
         safe_template_name = Path(template_name).name
         path = self.templates_dir / safe_template_name
         if not path.exists():
-            path = self.templates_dir / DEFAULT_SUMMARY_TEMPLATE
+            path = self.templates_dir / self.default_template
         return path.read_text(encoding="utf-8")
+
+
+async def resolve_template_content(template_name: str, user_id: int | None = None) -> str | None:
+    """从数据库解析模板内容，优先用户私有，其次公开模板。"""
+    from .database import async_session_factory
+    from .models import Template
+    from sqlalchemy import select, or_
+
+    async with async_session_factory() as session:
+        # 1. 用户私有模板
+        if user_id is not None:
+            result = await session.execute(
+                select(Template).where(
+                    Template.name == template_name, Template.user_id == user_id
+                )
+            )
+            t = result.scalar_one_or_none()
+            if t:
+                return t.content
+
+        # 2. 公开模板（系统 + 管理员创建）
+        result = await session.execute(
+            select(Template).where(Template.name == template_name, Template.user_id.is_(None))
+        )
+        t = result.scalar_one_or_none()
+        if t:
+            return t.content
+
+    return None
