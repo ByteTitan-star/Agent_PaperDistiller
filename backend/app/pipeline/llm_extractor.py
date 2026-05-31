@@ -259,10 +259,136 @@ def extract_template_headings(template_text: str, max_items: int = 8) -> list[st
     return headings
 
 
+def extract_summary_by_template(
+    translated_text: str,
+    template_text: str,
+    title: str,
+    settings: Any = None,
+    user_id: int | None = None,
+) -> dict[str, str]:
+    """
+    【模板引导的 LLM 摘要提取】
+    解析模板中的问题，用 LLM 从翻译后的文本中逐题提取答案。
+
+    参数:
+        translated_text: 翻译后的中文文本
+        template_text: 模板内容（Markdown）
+        title: 论文标题
+        settings: 应用配置
+        user_id: 用户 ID（用于 token 追踪）
+
+    返回:
+        {section_heading: answer_content} 的字典
+    """
+    effective_settings = settings or get_settings()
+    if not effective_settings.deepseek_api_key.strip():
+        return {}
+
+    # 解析模板：按 ## 分段
+    sections: list[tuple[str, str]] = []
+    current_heading = ""
+    current_body: list[str] = []
+    for line in template_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            if current_heading:
+                sections.append((current_heading, "\n".join(current_body).strip()))
+            current_heading = stripped.lstrip("#").strip()
+            current_body = []
+        elif stripped.startswith("# "):
+            continue
+        else:
+            current_body.append(stripped)
+    if current_heading:
+        sections.append((current_heading, "\n".join(current_body).strip()))
+
+    if not sections:
+        return {}
+
+    # 截断翻译文本
+    max_text_len = 12000
+    truncated_text = translated_text[:max_text_len]
+    if len(translated_text) > max_text_len:
+        truncated_text += "\n\n[...文本过长，已截断...]"
+
+    # 构建 prompt
+    sections_prompt_parts = []
+    for i, (heading, body) in enumerate(sections, 1):
+        sections_prompt_parts.append(f"### {i}. {heading}\n{body}")
+    sections_prompt = "\n\n".join(sections_prompt_parts)
+
+    system_prompt = (
+        "你是一个学术论文分析专家。请根据提供的论文翻译内容，按照模板中的每个章节逐一回答问题。\n"
+        "要求：\n"
+        "- 每个章节的回答必须基于论文内容，不要编造\n"
+        "- 使用中文回答\n"
+        "- 回答要简洁、结构化，使用 Markdown 格式\n"
+        "- 如果论文中没有相关信息，明确标注「论文未提及」\n"
+        "- 不要重复输出模板的标题，只输出回答内容"
+    )
+
+    user_prompt = (
+        f"论文标题：{title}\n\n"
+        f"## 论文翻译内容\n\n{truncated_text}\n\n"
+        f"## 请按以下模板章节逐一回答\n\n{sections_prompt}\n\n"
+        f"请严格按照上述章节顺序，用 Markdown 格式输出每个章节的回答内容。"
+    )
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=effective_settings.deepseek_api_key,
+            base_url=effective_settings.deepseek_base_url.rstrip("/"),
+            timeout=effective_settings.deepseek_timeout_sec,
+        )
+        resp = client.chat.completions.create(
+            model=effective_settings.deepseek_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            max_tokens=3000,
+        )
+        answer = (resp.choices[0].message.content or "").strip()
+
+        if resp.usage:
+            log_token_usage(
+                resp.usage.prompt_tokens,
+                resp.usage.completion_tokens,
+                user_id=user_id,
+                action_type="summary",
+            )
+
+        # 解析 LLM 返回：按 ### 分段
+        result: dict[str, str] = {}
+        current_section = ""
+        current_content: list[str] = []
+        for line in answer.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("### ") or (stripped.startswith("## ") and not stripped.startswith("## 论文")):
+                if current_section:
+                    result[current_section] = "\n".join(current_content).strip()
+                heading = re.sub(r"^#{2,3}\s*\d*\.?\s*", "", stripped).strip()
+                current_section = heading
+                current_content = []
+            elif current_section:
+                current_content.append(stripped)
+        if current_section:
+            result[current_section] = "\n".join(current_content).strip()
+
+        return result
+
+    except Exception:
+        return {}
+
+
 __all__ = [
     "infer_domain_tags",
     "extract_backdoor_indicators",
     "extract_backdoor_structured_info",
     "collect_key_sentences",
     "extract_template_headings",
+    "extract_summary_by_template",
 ]

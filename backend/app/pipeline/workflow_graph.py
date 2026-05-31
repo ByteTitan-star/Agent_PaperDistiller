@@ -117,14 +117,14 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
         """
         await broker.update(state["task_id"], "parsing", 15, "正在解析 PDF 文本。")
         text = await asyncio.to_thread(extract_text_from_pdf, storage.pdf_path(state["paper_id"]))
-        sections = split_text_into_sections(text)
-        chunks = await asyncio.to_thread(
+        sections = split_text_into_sections(text)  # 切分章节
+        chunks = await asyncio.to_thread( # 切分文本块
             chunk_text,
             text,
-            settings.max_chunk_chars,
-            settings.chunk_overlap,
+            settings.max_chunk_chars,  # 900
+            settings.chunk_overlap,  # 120
         )
-        await asyncio.to_thread(storage.save_chunks, state["paper_id"], chunks)
+        await asyncio.to_thread(storage.save_chunks, state["paper_id"], chunks)  # 保存文本块到存储
         return {
             "text": text,
             "sections": sections,
@@ -145,29 +145,29 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
         进度更新：45% 或 55%（根据重试次数）
         """
         retry_count = int(state.get("translation_retry_count", 0))
-        progress = 45 if retry_count == 0 else 55
-        await broker.update(
+        progress = 45 if retry_count == 0 else 55  # 45% 或 55%（根据重试次数）
+        await broker.update( # 更新任务状态
             state["task_id"],
             "translating",
-            progress,
+            progress,  # 进度
             f"正在进行全文翻译（第 {retry_count + 1} 轮）。",
         )
 
         translated_sections, translation_failures = await asyncio.to_thread(
             translate_sections,
-            state.get("sections", []),
-            state["target_language"],
+            state.get("sections", []),  # 章节列表
+            state["target_language"],  # 目标语言
         )
-        translation_md = await asyncio.to_thread(
+        translation_md = await asyncio.to_thread( # 生成翻译 Markdown
             make_translation_markdown,
             state["title"],
             state["target_language"],
             translated_sections,
             translation_failures,
         )
-        await asyncio.to_thread(storage.write_result, state["paper_id"], "translation", translation_md)
+        await asyncio.to_thread(storage.write_result, state["paper_id"], "translation", translation_md) # 保存翻译结果到存储
 
-        layout_html = await asyncio.to_thread(
+        layout_html = await asyncio.to_thread( # 生成翻译 HTML
             make_translation_layout_html,
             state["title"],
             state["target_language"],
@@ -263,7 +263,7 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
             90,
             f"{state_collaboration} | 正在生成改进与创新方案（{execution_order}）。",
         )
-        improvement_md = await asyncio.to_thread(
+        improvement_md = await asyncio.to_thread( # 生成改进建议 Markdown
             make_improvement_markdown,
             state["title"],
             state.get("tags", []),
@@ -272,14 +272,14 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
             settings,
             state.get("user_id"),
         )
-        await asyncio.to_thread(storage.write_result, state["paper_id"], "improvement", improvement_md)
-        await broker.update(
+        await asyncio.to_thread(storage.write_result, state["paper_id"], "improvement", improvement_md) # 保存改进建议到存储
+        await broker.update( # 更新任务状态
             state["task_id"],
             "done",
             100,
             f"任务已完成。{state_collaboration}",
         )
-        return {}
+        return {} # 返回空状态
 
     workflow.add_node("parse_pdf", parse_node)
     workflow.add_node("translate", translate_node)
