@@ -75,7 +75,7 @@ class PaperState(TypedDict, total=False):
     tags: list[str]
 
 
-def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Settings):
+def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Settings, agent_factory):
     """
     【构建流水线图】
     构建 LangGraph 工作流（可选，LangGraph 不可用时返回 None）。
@@ -90,7 +90,8 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
     参数:
         storage: 存储管理器
         broker: 任务状态代理
-        settings: 应用配置
+        settings: 应用配置（含用户 per-task API Key）
+        agent_factory: harness Agent 工厂，按角色创建/缓存已注入用户配置的 agent
 
     返回:
         编译后的 StateGraph 对象，或 None（LangGraph 不可用时）
@@ -101,6 +102,10 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
     workflow = StateGraph(PaperState)
     collaboration_mode = build_multi_agent_collaboration_label(settings)
     execution_order = "先生成 -> 后评估 -> 再 ToT 分支扩展与剪枝"
+
+    # 从工厂取已注入用户配置的 agent（工厂内按角色缓存，整个任务复用同一组）
+    deepseek_agent = agent_factory.create_deepseek()
+    tot_agent = agent_factory.create_tot()
 
     async def parse_node(state: PaperState) -> PaperState:
         """
@@ -175,7 +180,7 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
         )
         layout_path = storage.paper_output_dir(state["paper_id"]) / "translated_layout.html"
         await asyncio.to_thread(layout_path.write_text, layout_html, "utf-8")
-        storage._upload_to_oss(layout_path, state["paper_id"], "translated_layout.html")
+        storage._upload_to_oss(layout_path, state["paper_id"], "translated_layout.html") # 上传翻译 HTML 到 OSS
 
         return {
             "translated_sections": translated_sections,
@@ -223,18 +228,17 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
             state["template_name"], state.get("user_id")
         ) or await asyncio.to_thread(storage.read_template, state["template_name"])
 
-        summary_md = await asyncio.to_thread(
-            make_summary_markdown,
-            state["title"],
-            state["template_name"],
-            state["target_language"],
-            tags,
-            template_text,         # 模板内容传入
-            state.get("chunks", []),
-            translated_chunks,
-            state.get("text", ""),
-            settings,
-            state.get("user_id"),
+        summary_md = await make_summary_markdown(
+            title=state["title"],
+            template_name=state["template_name"],
+            target_language=state["target_language"],
+            tags=tags,
+            template_text=template_text,
+            source_chunks=state.get("chunks", []),
+            translated_chunks=translated_chunks,
+            text=state.get("text", ""),
+            deepseek_agent=deepseek_agent,
+            user_id=state.get("user_id"),
         )
         await asyncio.to_thread(
             storage.write_result, state["paper_id"], "summary", summary_md, state["template_name"]
@@ -263,14 +267,14 @@ def build_pipeline_graph(storage: Storage, broker: TaskBroker, settings: Setting
             90,
             f"{state_collaboration} | 正在生成改进与创新方案（{execution_order}）。",
         )
-        improvement_md = await asyncio.to_thread( # 生成改进建议 Markdown
-            make_improvement_markdown,
-            state["title"],
-            state.get("tags", []),
-            state.get("chunks", []),
-            state.get("translated_chunks", []),
-            settings,
-            state.get("user_id"),
+        improvement_md = await make_improvement_markdown(
+            title=state["title"],
+            tags=state.get("tags", []),
+            source_chunks=state.get("chunks", []),
+            translated_chunks=state.get("translated_chunks", []),
+            settings=settings,
+            tot_agent=tot_agent,
+            user_id=state.get("user_id"),
         )
         await asyncio.to_thread(storage.write_result, state["paper_id"], "improvement", improvement_md) # 保存改进建议到存储
         await broker.update( # 更新任务状态
@@ -308,6 +312,7 @@ async def run_pipeline_linear(
     storage: Storage,
     broker: TaskBroker,
     settings: Settings,
+    agent_factory,
     user_id: int | None = None,
 ) -> list[str]:
     """
@@ -328,13 +333,16 @@ async def run_pipeline_linear(
         template_name: 模板名称
         storage: 存储管理器
         broker: 任务代理
-        settings: 配置对象
+        settings: 配置对象（含用户 per-task API Key）
+        agent_factory: harness Agent 工厂
 
     返回:
         领域标签列表
     """
     collaboration_mode = build_multi_agent_collaboration_label(settings)
     execution_order = "先生成 -> 后评估 -> 再 ToT 分支扩展与剪枝"
+    deepseek_agent = agent_factory.create_deepseek()
+    tot_agent = agent_factory.create_tot()
     logger.info("[Linear] Step 1/4 - Parsing PDF: task_id=%s paper_id=%s", task_id, paper_id)
     await broker.update(task_id, "parsing", 15, "正在解析 PDF 文本。")
     text = await asyncio.to_thread(extract_text_from_pdf, storage.pdf_path(paper_id))
@@ -382,7 +390,7 @@ async def run_pipeline_linear(
     )
     layout_path = storage.paper_output_dir(paper_id) / "translated_layout.html"
     await asyncio.to_thread(layout_path.write_text, layout_html, "utf-8")
-    storage._upload_to_oss(layout_path, paper_id, "translated_layout.html")
+    storage._upload_to_oss(layout_path, paper_id, "translated_layout.html") # 上传翻译 HTML 到 OSS
     await asyncio.sleep(0.1)
     logger.info("[Linear] Translation done: failures=%d", translation_failures)
 
@@ -395,18 +403,17 @@ async def run_pipeline_linear(
                 task_id, tags, bool(template_text))
 
     await broker.update(task_id, "summarizing", 70, "正在提取核心摘要。")
-    summary_md = await asyncio.to_thread(
-        make_summary_markdown,
-        title,
-        template_name,
-        target_language,
-        tags,
-        template_text,
-        chunks,
-        translated_chunks,
-        text,
-        settings,
-        user_id,
+    summary_md = await make_summary_markdown(
+        title=title,
+        template_name=template_name,
+        target_language=target_language,
+        tags=tags,
+        template_text=template_text,
+        source_chunks=chunks,
+        translated_chunks=translated_chunks,
+        text=text,
+        deepseek_agent=deepseek_agent,
+        user_id=user_id,
     )
     await asyncio.to_thread(storage.write_result, paper_id, "summary", summary_md, template_name)
     await asyncio.sleep(0.1)
@@ -418,14 +425,14 @@ async def run_pipeline_linear(
         90,
         f"{collaboration_mode} | 正在生成改进与创新方案（{execution_order}）。",
     )
-    improvement_md = await asyncio.to_thread(
-        make_improvement_markdown,
-        title,
-        tags,
-        chunks,
-        translated_chunks,
-        settings,
-        user_id,
+    improvement_md = await make_improvement_markdown(
+        title=title,
+        tags=tags,
+        source_chunks=chunks,
+        translated_chunks=translated_chunks,
+        settings=settings,
+        tot_agent=tot_agent,
+        user_id=user_id,
     )
     await asyncio.to_thread(storage.write_result, paper_id, "improvement", improvement_md)
     await asyncio.sleep(0.1)
@@ -469,7 +476,12 @@ async def run_pipeline(
     返回:
         领域标签列表
     """
-    graph = build_pipeline_graph(storage=storage, broker=broker, settings=settings)
+    # 构建 harness Agent 工厂（带用户 per-task 配置），供 LangGraph / 线性两条路径复用
+    from ..harness.agents.factory import AgentFactory
+    from ..harness.events import EventBus
+    agent_factory = AgentFactory(EventBus(), settings)
+
+    graph = build_pipeline_graph(storage=storage, broker=broker, settings=settings, agent_factory=agent_factory)
     if graph is None:
         logger.info("LangGraph not available, using linear pipeline: task_id=%s", task_id)
         return await run_pipeline_linear(
@@ -481,6 +493,7 @@ async def run_pipeline(
             storage=storage,
             broker=broker,
             settings=settings,
+            agent_factory=agent_factory,
             user_id=user_id,
         )
 
@@ -516,6 +529,8 @@ async def run_pipeline(
             storage=storage,
             broker=broker,
             settings=settings,
+            agent_factory=agent_factory,
+            user_id=user_id,
         )
 
 

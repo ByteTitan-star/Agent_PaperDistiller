@@ -1,18 +1,17 @@
 # Markdown/HTML报告生成
 import html
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .common_utils import utc_now_iso
 from ..config import Settings
-from .llm_extractor import (
-    collect_key_sentences,
-    extract_backdoor_indicators,
-    extract_backdoor_structured_info,
-    extract_summary_by_template,
-)
+from .llm_extractor import collect_key_sentences, extract_summary_by_template
 from ..storage import domain_tag_from_template
 from .tot_generator import build_multi_agent_collaboration_label, generate_innovation_ideas
+
+if TYPE_CHECKING:
+    from ..harness.agents.base import BaseAgent
+    from ..harness.agents.tot_agent import ToTAgent
 
 
 def make_translation_markdown(
@@ -136,7 +135,7 @@ def make_translation_layout_html(
 </html>"""
 
 
-def make_summary_markdown(
+async def make_summary_markdown(
     title: str,
     template_name: str,
     target_language: str,
@@ -145,16 +144,16 @@ def make_summary_markdown(
     source_chunks: list[str],
     translated_chunks: list[str],
     text: str,
-    settings: Settings | None = None,
+    deepseek_agent: "BaseAgent",
     user_id: int | None = None,
 ) -> str:
     """
     【生成摘要 Markdown】
-    使用 LLM 根据模板问题从翻译后的文本中提取结构化摘要。
+    使用 LLM（DeepSeekAgent）根据模板问题从翻译后的文本中提取结构化摘要。
 
     流程：
     1. 拼接翻译后的文本块
-    2. 调用 LLM 按模板章节逐题提取
+    2. 调用 DeepSeekAgent 按模板章节逐题提取
     3. 组装为 Markdown 报告
 
     参数:
@@ -166,6 +165,8 @@ def make_summary_markdown(
         source_chunks: 原始文本块
         translated_chunks: 翻译后的文本块
         text: 完整论文文本
+        deepseek_agent: 已注入用户配置的 DeepSeekAgent 实例
+        user_id: 用户 ID（token 记账归属）
 
     返回:
         Markdown 格式的摘要报告
@@ -174,12 +175,12 @@ def make_summary_markdown(
     display_chunks = translated_chunks or source_chunks
     translated_text = "\n\n".join(display_chunks)
 
-    # Step 1: LLM 按模板提取
-    llm_sections = extract_summary_by_template(
+    # Step 1: LLM 按模板提取（token 用量由 agent 的 on_post_run 集中记录）
+    llm_sections = await extract_summary_by_template(
         translated_text=translated_text,
         template_text=template_text,
         title=title,
-        settings=settings,
+        deepseek_agent=deepseek_agent,
         user_id=user_id,
     )
 
@@ -219,12 +220,13 @@ def make_summary_markdown(
 
 
 
-def make_improvement_markdown(
+async def make_improvement_markdown(
     title: str,
     tags: list[str],
     source_chunks: list[str],
     translated_chunks: list[str],
     settings: Settings | None = None,
+    tot_agent: "ToTAgent | None" = None,
     user_id: int | None = None,
 ) -> str:
     """
@@ -258,11 +260,11 @@ def make_improvement_markdown(
         else "Multi-Agent Collaboration: DeepSeek-V3 (Gen) + Qwen3 (Eval)"
     )
     execution_order = "先生成 -> 后评估 -> 再 ToT 分支扩展与剪枝"
-    innovations, tot_note = generate_innovation_ideas(
+    innovations, tot_note = await generate_innovation_ideas(
         title=title,
         tags=tags,
         evidence=evidence,
-        settings=settings,
+        tot_agent=tot_agent,
         user_id=user_id,
     )
 

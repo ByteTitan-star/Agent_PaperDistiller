@@ -6,7 +6,7 @@ pypdf==5.9.0
 openai>=1.0.0
 chromadb>=0.5.0
 sentence-transformers>=3.0.0
-langgraph>=0.2.0
+langgraph>=0.2.60
 langchain-openai>=0.3.0
 pyyaml>=6.0.0
 sqlalchemy[asyncio]>=2.0.0
@@ -17,3 +17,11 @@ bcrypt>=4.0.0
 email-validator>=2.0.0
 tavily-python>=0.5.0
 oss2>=2.18.0
+# v3.0 harness 新增能力（均默认关闭，按需启用）
+mcp>=1.2.0                       # Phase 3: MCP server/client（对外暴露技能 / 对内调用外部 MCP）
+langchain-mcp-adapters>=0.1.0    # Phase 3: 把外部 MCP server 转为 LangChain 工具
+opentelemetry-sdk>=1.24.0        # Phase 4: 自托管可观测（OTLP / console exporter）
+opentelemetry-instrumentation-fastapi>=0.45b0
+opentelemetry-exporter-otlp>=1.24.0
+sse-starlette>=1.6.0             # Phase 5: 更干净的 SSE 流式（可选）
+tenacity>=8.2.0                  # Phase 6: agent 重试 / 超时

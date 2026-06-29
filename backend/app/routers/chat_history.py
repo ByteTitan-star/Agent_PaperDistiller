@@ -18,7 +18,11 @@ async def list_chat_sessions(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """列出当前用户在某论文下的所有会话。"""
+    """列出当前用户在某论文下的所有聊天会话。
+
+    前端页面：WorkspaceView（工作区页）右侧聊天面板
+    用户操作：进入工作区时自动加载会话列表（显示在聊天面板顶部下拉框中）
+    """
     stmt = (
         select(ChatSession)
         .where(ChatSession.paper_id == paper_id, ChatSession.user_id == user.id)
@@ -61,7 +65,11 @@ async def get_chat_messages(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取某个会话的完整消息历史。"""
+    """获取某个会话的完整消息历史。
+
+    前端页面：WorkspaceView（工作区页）右侧聊天面板
+    用户操作：在会话下拉框中切换到某个历史会话 → 加载该会话的所有聊天记录
+    """
     # 验证所有权
     session_result = await db.execute(
         select(ChatSession).where(
@@ -96,7 +104,11 @@ async def delete_chat_session(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除一个会话及其所有消息。"""
+    """删除一个会话及其所有消息。
+
+    前端页面：WorkspaceView（工作区页）右侧聊天面板
+    用户操作：在会话列表中点击「删除」按钮删除某个聊天会话
+    """
     session_result = await db.execute(
         select(ChatSession).where(
             ChatSession.session_id == session_id,

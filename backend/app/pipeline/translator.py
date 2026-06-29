@@ -1,5 +1,6 @@
 # 	在线翻译、文本切分
 import json
+import logging
 import re
 import time
 from typing import Any
@@ -8,6 +9,8 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .common_utils import remove_surrogates
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_language_code(target_language: str) -> str:
@@ -42,20 +45,19 @@ def normalize_language_code(target_language: str) -> str:
     return mapping.get(low, "zh-CN")
 
 
-def translate_text_online(text: str, target_language: str, timeout: int = 20) -> str:
+def translate_text_online(text: str, target_language: str, timeout: int = 20, max_retries: int = 3) -> str:
     """
     【在线文本翻译】
-    调用 Google 翻译 API 翻译单段文本。
+    调用 Google 翻译 API 翻译单段文本，支持重试。
 
-    注意：
-    - 使用非官方 API（translate.googleapis.com），可能有频率限制
-    - 目标语言为英文时直接返回原文（无需翻译）
-    - 自动清理代理字符
+    重试策略：最多重试 max_retries 次，间隔 1s/3s/5s 递增。
+    每次重试都有清晰的日志输出，不会一次性吐出一大堆。
 
     参数:
         text: 待翻译文本
         target_language: 目标语言
         timeout: 请求超时时间（秒）
+        max_retries: 最大重试次数（默认 3）
 
     返回:
         翻译后的文本，失败则返回原文
@@ -78,17 +80,39 @@ def translate_text_online(text: str, target_language: str, timeout: int = 20) ->
         }
     )
     url = f"https://translate.googleapis.com/translate_a/single?{params}"
-    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
 
-    with urlopen(request, timeout=timeout) as response:
-        payload: Any = json.loads(response.read().decode("utf-8"))
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urlopen(request, timeout=timeout) as response:
+                payload: Any = json.loads(response.read().decode("utf-8"))
 
-    if not payload or not payload[0]:
-        return clean
+            if not payload or not payload[0]:
+                return clean
 
-    translated_parts = [part[0] for part in payload[0] if part and part[0]]
-    translated = "".join(translated_parts).strip()
-    return translated or clean
+            translated_parts = [part[0] for part in payload[0] if part and part[0]]
+            translated = "".join(translated_parts).strip()
+            if attempt > 1:
+                logger.info("[翻译] ✅ 重试第%d次成功", attempt - 1)
+            return translated or clean
+
+        except (URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError) as e:
+            last_error = e
+            if attempt < max_retries:
+                wait_sec = [1, 3, 5][attempt - 1]
+                logger.warning(
+                    "[翻译] ⚠️ 第%d次请求失败（%s: %s），%d秒后重试... | 原文前50字：%s",
+                    attempt, type(e).__name__, str(e)[:80], wait_sec, clean[:50],
+                )
+                time.sleep(wait_sec)
+            else:
+                logger.error(
+                    "[翻译] ❌ 第%d次请求仍然失败（%s: %s），放弃重试，保留原文 | 原文前50字：%s",
+                    attempt, type(e).__name__, str(e)[:80], clean[:50],
+                )
+
+    return clean
 
 
 def split_for_translation(text: str, max_chars: int = 500) -> list[str]:

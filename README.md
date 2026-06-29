@@ -67,7 +67,51 @@ npm run dev
 
 ## 📋 更新日志
 
-### v2.1（2026-05-31）
+### v3.0（2026-06-28）
+
+**Harness 工程全量改造 —— 让 harness 成为唯一执行脊柱**。本次重构修复了一个根本性架构缺陷：此前 `AppHarness.startup()` 从未被调用，导致整个 harness 层（agents / collaboration / tools / pipeline 适配器）在运行时**全部是死代码**，真实流量绕过它们直调 `pipeline/workflow_graph`。v3.0 让 harness 真正接管所有 LLM 调用与工具执行，并补齐 2026 主流 Agent harness 概念（MCP / OTel / 真流式 / 健壮性）。
+
+**Phase 0 · 地基：harness 可达 + 单例唯一**
+- `AppHarness.startup()/shutdown()` 接入 FastAPI lifespan（`harness_startup_enabled` 开关，默认开，失败不阻断启动）
+- 单例收敛到 `dependencies.py`（消除 `main.py` 与 `dependencies.py` 各建一套 Storage/Broker/SkillRegistry 的重复，顺带修复 `main.py` 那份 Storage 未挂载 OSS 的 bug）
+- 修复致命 HITL bug：`pipeline/base.py` 调用了不存在的 `hitl_manager.check()` → 改为正确的 `interrupt()` + `wait_for_decision()`
+- `worker.py` 现在真正走 `pipeline_harness.run()`（此前因 startup 未跑而永远回退 legacy）
+
+**Phase 1 · 流水线 LLM 调用全部走 harness agent**
+- 删除 `tot_generator` / `llm_extractor` 内自建的 OpenAI client（与 harness agent 完全重复），改为统一委托 `DeepSeekAgent` / `ToTAgent`
+- 修复**致命的 per-task API Key bug**：此前启动时 agent 用占位符 key 构造、用户真实 key（存在 `user_settings`）到不了 agent → 改为每个任务用用户配置新建 `AgentFactory`，确保 agent 拿到正确 key
+- `renderer` 摘要/改进函数改为 async，`build_pipeline_graph` 注入 agent；删除死代码 `extract_backdoor_structured_info` / `extract_backdoor_indicators` / `extract_template_headings` / `_log_token_to_db_sync`
+- Token 记账收敛到 `BaseAgent.on_post_run` 单条路径（带 `user_id` / `action_type`），消除此前的双写/三写
+
+**Phase 2 · 死代码裁决 + Supervisor 接入**
+- 删除 `harness/session/`（已被 SQLAlchemy `ChatSession`/`ChatMessage` ORM 取代）
+- 删除残桩 `DebatePattern`（丢弃评审、多轮无反馈环；该对抗协作已由 ToT 的 generate→evaluate→prune 完整覆盖）
+- `HarnessToolRegistry` 成为**唯一工具执行面**（chat + ReAct 统一走 `get_tool_executor()`，自动获得事件追踪/限流）
+- `SupervisorPattern` 接入深度搜索研究规划（`supervisor_planning_enabled` 开关，默认关；主管分解子问题 → worker 并行 → 合并）
+- `AgentFactory` 的 `SUPERVISOR` 角色显式映射，`TRANSLATOR`/`PARSER`（非 LLM 同步步骤）显式报错而非静默 fallback
+
+**Phase 3 · MCP（Model Context Protocol）对外 + 对内**
+- 新增 `harness/mcp/`：`server.py` 用 FastMCP 把技能（web_search / arxiv_search）标准化暴露为 MCP 工具；`client.py` 让 ReAct agent 可调用外部 MCP server
+- `_context` 依赖 / 安全敏感技能（figure_extraction / code_execution）标记 `local_only`，不对外暴露
+- 默认关闭（`mcp_enabled` / `mcp_inbound_enabled`），懒导入 `mcp` 包，未安装时优雅降级不影响启动
+
+**Phase 4 · OpenTelemetry 自托管可观测**
+- 选用 OTel（非 LangSmith）：自托管 exporter（Jaeger/Tempo/console）国内网络最稳
+- `FastAPIInstrumentor` 自动埋点 + 现有 `Tracer` 桥接到 OTel span（`otel_enabled` 开关，默认关）
+
+**Phase 5 · 真异步流式**
+- 普通 chat 路径 `call_deepseek_chat_stream` 由同步阻塞 `OpenAI` 改为 `AsyncOpenAI` 异步迭代，不再逐 token 阻塞事件循环（SSE 契约保持不变）
+
+**Phase 6 · 健壮性**
+- `BaseAgent` 接入 tenacity 瞬态错误重试（消费此前死掉的 `agent_retry_count`/`agent_retry_delay` 配置，仅重试限流/超时/连接错误）
+- `AppHarness.shutdown()` 真正关闭 agent 持有的 OpenAI 连接（新增 `BaseAgent.aclose()`）
+- `RateLimiter` 接入 `HarnessToolRegistry`（`tool_rate_limit_max_calls`，默认 0 不限流），并修正其"令牌桶"文档谎言（实为滑动窗口）
+
+> 注：MCP / OTel / tenacity 等新依赖已加入 `requirements.txt`，对应功能默认关闭，按需 `pip install` 后通过配置开启。所有改动通过 `py_compile` 与分阶段逻辑测试验证；流水线端到端请在真实环境（MySQL + API Key + 前端）联调确认。
+
+---
+
+### v2.0（2026-05-31）
 
 本次版本更新引入了以下核心改动：
 
@@ -105,7 +149,7 @@ npm run dev
 
 ---
 
-### v2.0（2026-05-24）
+### v1.0（2026-05-24）
 
 - 初始版本：PDF 解析、全文翻译、摘要提取、创新点评审
 - LangGraph StateGraph 流水线编排

@@ -91,6 +91,11 @@ async def list_templates(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """获取模板列表（用户的 + 系统内置的）。
+
+    前端页面：① HomeView（首页上传时的模板下拉选择）② SettingsView（设置页模板管理列表）
+    用户操作：进入首页或设置页时自动加载
+    """
     stmt = select(Template).options(selectinload(Template.owner))
     # 管理员可见所有模版；普通用户只看自己的 + 系统模版
     if user.role != "admin":
@@ -106,6 +111,11 @@ async def get_template(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """获取模板详情（含完整内容）。
+
+    前端页面：SettingsView（设置页模板管理）
+    用户操作：点击模板列表中某条模板的「查看」或「编辑」按钮
+    """
     t = await _get_visible_template(template_id, user, db)
     return _template_to_detail(t)
 
@@ -116,6 +126,11 @@ async def create_template(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """新建自定义摘要模板。
+
+    前端页面：SettingsView（设置页模板管理）
+    用户操作：点击「新建模板」→ 填写名称/内容/领域标签 → 点击「保存」
+    """
     existing = await db.execute(
         select(Template).where(Template.user_id == user.id, Template.name == body.name)
     )
@@ -148,6 +163,11 @@ async def upload_template(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """上传 .md 文件作为摘要模板。
+
+    前端页面：SettingsView（设置页模板管理）
+    用户操作：点击「上传 .md」按钮 → 选择本地 Markdown 文件上传
+    """
     if not file.filename or not file.filename.lower().endswith(".md"):
         raise HTTPException(400, "仅支持上传 .md 文件")
     content = (await file.read()).decode("utf-8", errors="replace")
@@ -178,6 +198,11 @@ async def update_template(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """编辑已有模板。
+
+    前端页面：SettingsView（设置页模板管理）
+    用户操作：点击模板的「编辑」→ 修改内容 → 点击「保存」
+    """
     t = await _get_owned_template(template_id, user, db)
     if body.name is not None:
         t.name = body.name
@@ -196,6 +221,11 @@ async def delete_template(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """删除用户自定义模板。
+
+    前端页面：SettingsView（设置页模板管理）
+    用户操作：点击模板列表中某条模板的「删除」按钮
+    """
     t = await _get_owned_template(template_id, user, db)
     await db.delete(t)
     await db.flush()
@@ -209,7 +239,11 @@ async def admin_list_templates(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """管理员查看所有模板（含上传者信息）。"""
+    """管理员查看所有模板（含上传者信息）。
+
+    前端页面：AdminView（管理员页）「模板管理」Tab
+    用户操作：管理员点击「模板管理」Tab 自动加载
+    """
     result = await db.execute(
         select(Template)
         .options(selectinload(Template.owner))
@@ -237,7 +271,11 @@ async def admin_delete_template(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """管理员删除任意模板，并邮件通知模板所有者。"""
+    """管理员删除任意模板，并邮件通知模板所有者。
+
+    前端页面：AdminView（管理员页）「模板管理」Tab
+    用户操作：管理员在模板表格中点击「删除」按钮
+    """
     result = await db.execute(
         select(Template)
         .options(selectinload(Template.owner))

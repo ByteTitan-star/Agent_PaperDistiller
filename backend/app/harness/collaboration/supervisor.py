@@ -1,4 +1,10 @@
-"""SupervisorPattern — one agent delegates to sub-agents and merges results."""
+"""监督者模式（SupervisorPattern）— 一个监督者分解任务，多个工人并行执行，最后合并。
+
+流程：
+    1. Supervisor（监督者）接收任务并分解为 N 个子任务
+    2. 每个 Worker（工人）并行处理一个子任务
+    3. Supervisor 将所有子任务结果合并为最终报告
+"""
 
 from __future__ import annotations
 
@@ -11,45 +17,52 @@ from .base import BaseCollaborationPattern
 
 
 class SupervisorPattern(BaseCollaborationPattern):
-    """Supervisor decomposes a task, dispatches to workers, then merges.
+    """监督者模式：一个 Agent 负责任务分解和结果合并，多个 Agent 并行执行子任务。
 
-    Flow:
-        1. Supervisor receives the task and decomposes it into sub-tasks
-        2. Each worker agent handles a sub-task
-        3. Supervisor merges all results into a final answer
+    流程：
+        1. Supervisor（监督者，agents[0]）将任务分解为 len(workers) 个子任务
+        2. 每个 Worker（agents[1:]）并行执行对应的子任务
+        3. Supervisor 使用合并模板将所有子结果整合为最终报告
 
-    Args:
-        supervisor: The coordinating agent.
-        workers: List of worker agents to dispatch to.
-        merge_prompt_template: Prompt template for the merge step.
-            Available variables: {sub_results} (formatted sub-results).
+    Attributes:
+        merge_prompt_template: 合并提示词模板，必须包含 {sub_results} 占位符。
     """
 
     def __init__(
         self,
-        supervisor: BaseAgent,
-        workers: list[BaseAgent],
-        event_bus: EventBus,
-        merge_prompt_template: str | None = None,
+        supervisor: BaseAgent,                     # 监督者 Agent
+        workers: list[BaseAgent],                   # 工人 Agent 列表
+        event_bus: EventBus,                        # 事件总线
+        merge_prompt_template: str | None = None,   # 自定义合并模板
     ) -> None:
         super().__init__(
             name="supervisor",
             agents=[supervisor, *workers],
             event_bus=event_bus,
         )
+        # 默认合并模板
         self.merge_prompt_template = merge_prompt_template or (
             "以下是多个子任务的结果，请将它们整合为一份最终报告：\n\n{sub_results}"
         )
 
     async def run(self, input_text: str, **kwargs: object) -> CollaborationResult:
+        """执行监督者模式流程。
+
+        Args:
+            input_text: 初始输入文本。
+            **kwargs: 附加参数，传递给所有 Agent。
+
+        Returns:
+            CollaborationResult: 包含最终合并结果的协作结果。
+        """
         self._emit("supervisor_start")
 
-        supervisor = self.agents[0]
-        workers = self.agents[1:]
+        supervisor = self.agents[0]   # 监督者
+        workers = self.agents[1:]     # 工人们
 
         trace: list[dict[str, Any]] = []
 
-        # Phase 1: Supervisor decomposes the task
+        # ── 阶段 1：监督者分解任务 ──
         decompose_prompt = (
             f"请将以下任务分解为 {len(workers)} 个子任务，每个子任务一行，不要编号：\n\n{input_text}"
         )
@@ -67,26 +80,28 @@ class SupervisorPattern(BaseCollaborationPattern):
                 trace=trace,
             )
 
+        # 按行分割子任务，截取到工人数量
         sub_tasks = [
             line.strip()
             for line in str(decompose_result.content).splitlines()
             if line.strip()
         ][:len(workers)]
 
-        # Phase 2: Workers execute sub-tasks in parallel
+        # ── 阶段 2：工人并行执行子任务 ──
         self._emit("workers_start", {"worker_count": len(sub_tasks)})
         sub_results: list[AgentResult] = []
 
         import asyncio
         tasks = []
         for idx, sub_task in enumerate(sub_tasks):
-            worker = workers[idx % len(workers)]
+            worker = workers[idx % len(workers)]  # 轮流分配工人
             tasks.append(worker.execute(sub_task, **kwargs))
             trace.append({"role": "worker", "phase": "execute", "agent": worker.name, "sub_task": sub_task[:100]})
 
+        # 并行等待所有工人完成（异常会被捕获，不会中断其他工人）
         sub_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Phase 3: Supervisor merges
+        # ── 阶段 3：监督者合并结果 ──
         formatted_results = []
         for idx, result in enumerate(sub_results):
             if isinstance(result, Exception):

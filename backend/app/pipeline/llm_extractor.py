@@ -1,12 +1,11 @@
-# 领域标签推断、后门指标提取、结构化信息提取
-import json
-import os
+# 领域标签推断、关键句提取、模板引导摘要提取
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .common_utils import log_token_usage, remove_surrogates
-from ..config import get_settings
 from ..storage import domain_tag_from_template, unique_keep_order
+
+if TYPE_CHECKING:
+    from ..harness.agents.base import BaseAgent
 
 
 def infer_domain_tags(text: str, template_name: str) -> list[str]:
@@ -44,162 +43,6 @@ def infer_domain_tags(text: str, template_name: str) -> list[str]:
     return unique_keep_order(tags) or ["General"]
 
 
-def extract_backdoor_indicators(text: str) -> dict[str, str]:
-    """
-    【后门指标提取】
-    从文本中提取后门论文常见指标（ASR、触发器、数据集等）。
-
-    提取字段：
-    - Attack Setting: 攻击设置（clean-label、all-to-one 等）
-    - Trigger Type: 触发器类型（patch、blended、semantic 等）
-    - Primary Dataset: 主要数据集（CIFAR-10、ImageNet 等）
-    - Representative ASR: 代表性攻击成功率
-    - Representative Clean Acc: 代表性干净准确率
-
-    参数:
-        text: 论文文本内容
-
-    返回:
-        包含各项指标的字典，未找到则标记为 "N/A"
-    """
-    def find_first(patterns: list[str]) -> str:
-        """【内部函数】按优先级匹配第一个正则模式"""
-        for pattern in patterns:
-            match = re.search(pattern, text, flags=re.IGNORECASE)
-            if match:
-                return match.group(1)
-        return "N/A"
-
-    return {
-        "Attack Setting": find_first(
-            [
-                r"(clean-label\s+backdoor)",
-                r"(all-to-one|all-to-all)",
-                r"(data\s+poisoning)",
-            ]
-        ),
-        "Trigger Type": find_first(
-            [
-                r"(patch\s+trigger)",
-                r"(blended\s+trigger)",
-                r"(semantic\s+trigger)",
-                r"(frequency\s+trigger)",
-                r"(warping[- ]based\s+trigger)",
-            ]
-        ),
-        "Primary Dataset": find_first(
-            [r"\b(CIFAR-10|CIFAR-100|ImageNet|Tiny-ImageNet|GTSRB|MNIST|SVHN)\b"]
-        ),
-        "Representative ASR": find_first(
-            [
-                r"ASR[^0-9]{0,12}(\d{1,3}(?:\.\d+)?%)",
-                r"attack success rate[^0-9]{0,12}(\d{1,3}(?:\.\d+)?%)",
-            ]
-        ),
-        "Representative Clean Acc": find_first(
-            [
-                r"clean accuracy[^0-9]{0,12}(\d{1,3}(?:\.\d+)?%)",
-                r"CA[^0-9]{0,12}(\d{1,3}(?:\.\d+)?%)",
-            ]
-        ),
-    }
-
-
-def extract_backdoor_structured_info(text: str, title: str, settings: Any = None, user_id: int | None = None) -> dict[str, Any]:
-    """
-    【结构化信息提取】
-    使用 DeepSeek LLM 对论文进行结构化信息提取。
-
-    提取字段（JSON Schema）：
-    - two_sentence_summary: 两句话概括
-    - datasets: 使用的数据集
-    - target_models: 目标模型
-    - baselines: 对比基线方法
-    - poison_rates: 中毒率列表
-    - asr_values: ASR 值列表
-    - clean_acc_drop: 干净准确率下降
-    - attack_type: 攻击类型
-    - trigger_type: 触发器类型
-    - contributions: 主要贡献列表
-
-    参数:
-        text: 论文全文（截取前 28000 字符）
-        title: 论文标题
-        settings: 可选配置对象，未提供时使用全局 settings
-
-    返回:
-        解析后的 JSON 字典，失败则返回空字典
-    """
-    try:
-        from openai import OpenAI
-    except Exception:
-        return {}
-
-    try:
-        effective_settings = settings or get_settings()
-        if not effective_settings.deepseek_api_key.strip():
-            raise ValueError("DEEPSEEK_API_KEY 未配置")
-
-        client = OpenAI(
-            api_key=effective_settings.deepseek_api_key,
-            base_url=effective_settings.deepseek_base_url.rstrip("/"),
-            timeout=60,
-        )
-
-        # 系统提示词
-        prompt = f"""你是一位顶会审稿人，正在分析一篇后门攻击（Backdoor Attack）论文。
-        论文标题：{title}
-
-        请严格依据全文内容，提取以下结构化信息。只输出合法 JSON，不要解释，不要 markdown。
-
-        JSON Schema（必须严格遵守）：
-        模板内容：
-        {template_content}
-        {{
-        "two_sentence_summary": "用不超过两句话概括整篇论文做了什么、核心创新是什么",
-        "datasets": "主要数据集（列出所有，如 CIFAR-10, ImageNet, 自定义 BadVideo-100K）",
-        "target_models": "攻击的目标模型（ResNet-50, ViT-B/16 等）",
-        "baselines": "对比的 SOTA 方法（列出 3-5 个，如 BadNet, Blend, WaNet 等）",
-        "poison_rates": "所有实验中毒率（列表，如 [\"5%\", \"10%\", \"0.05\"]）",
-        "asr_values": '攻击成功率 ASR（列表，带对应数据集）',
-        "clean_acc_drop": "干净准确率下降 CDA（列表）",
-        "attack_type": "攻击类型（data poisoning / model poisoning / train-time / inference-time）",
-        "trigger_type": "触发器类型（patch, blended, semantic, natural, dynamic 等）",
-        "contributions": ["贡献1", "贡献2", "贡献3"]
-        }}
-
-        全文内容：
-        {text[:28000]}
-
-        只返回 JSON，不要加任何其他文字。"""
-
-        response = client.chat.completions.create(
-            model=effective_settings.deepseek_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=1200,
-        )
-
-        if response.usage:
-            log_token_usage(
-                project_name=effective_settings.app_name,
-                model_name=effective_settings.deepseek_model,
-                prompt_tokens=response.usage.prompt_tokens,
-                completion_tokens=response.usage.completion_tokens,
-                user_id=user_id,
-                action_type="pipeline",
-            )
-
-        content = (response.choices[0].message.content or "").strip()
-        json_match = re.search(r"\{.*\}", content, re.DOTALL)
-        if not json_match:
-            return {}
-        return json.loads(json_match.group(0))
-    except Exception as e:
-        print(f"[Warning] LLM 提取失败，回退正则: {e}")
-        return {}
-
-
 def collect_key_sentences(chunks: list[str], max_items: int = 8) -> list[str]:
     """
     【关键句提取】
@@ -220,70 +63,47 @@ def collect_key_sentences(chunks: list[str], max_items: int = 8) -> list[str]:
     if not chunks:
         return []
 
-    text = " ".join(chunks[:24])
-    candidates = re.split(r"(?<=[.!?。！？])\s+", text)
+    text = " ".join(chunks[:24])  # 拼接前 24 个文本块
+    candidates = re.split(r"(?<=[.!?。！？])\s+", text)  # 按句子边界切分
 
     selected: list[str] = []
-    for sentence in candidates:
+    for sentence in candidates:  # 过滤过短（<28 字符）的句子
         compact = re.sub(r"\s+", " ", sentence).strip()
         if len(compact) < 28:
             continue
-        selected.append(compact[:260])
-        if len(selected) >= max_items:
+        selected.append(compact[:260])  # 截取前 260 字符
+        if len(selected) >= max_items:  # 如果提取的句子数达到最大值，则停止
             break
 
     if not selected:
-        selected = [chunk[:260] for chunk in chunks[:max_items]]
+        selected = [chunk[:260] for chunk in chunks[:max_items]]  # 回退：截取前 max_items 个文本块的前 260 字符
     return selected
 
 
-def extract_template_headings(template_text: str, max_items: int = 8) -> list[str]:
-    """
-    【模板标题提取】
-    提取模板中的标题层级，便于摘要对齐模板结构。
-
-    参数:
-        template_text: 模板文本内容
-        max_items: 最大提取标题数
-
-    返回:
-        标题列表（去除 # 标记）
-    """
-    headings: list[str] = []
-    for line in template_text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            headings.append(stripped.lstrip("#").strip())
-        if len(headings) >= max_items:
-            break
-    return headings
-
-
-def extract_summary_by_template(
+async def extract_summary_by_template(
     translated_text: str,
     template_text: str,
     title: str,
-    settings: Any = None,
+    deepseek_agent: "BaseAgent",
     user_id: int | None = None,
 ) -> dict[str, str]:
     """
     【模板引导的 LLM 摘要提取】
-    解析模板中的问题，用 LLM 从翻译后的文本中逐题提取答案。
+    解析模板中的问题，用 DeepSeekAgent 从翻译后的文本中逐题提取答案。
+
+    LLM 调用统一走 harness agent（DeepSeekAgent.execute），token 用量由
+    BaseAgent.on_post_run 集中记账，本函数不再自建 OpenAI client、不再重复写库。
 
     参数:
         translated_text: 翻译后的中文文本
         template_text: 模板内容（Markdown）
         title: 论文标题
-        settings: 应用配置
+        deepseek_agent: 已注入用户配置的 DeepSeekAgent 实例
         user_id: 用户 ID（用于 token 追踪）
 
     返回:
         {section_heading: answer_content} 的字典
     """
-    effective_settings = settings or get_settings()
-    if not effective_settings.deepseek_api_key.strip():
-        return {}
-
     # 解析模板：按 ## 分段
     sections: list[tuple[str, str]] = []
     current_heading = ""
@@ -334,61 +154,41 @@ def extract_summary_by_template(
         f"请严格按照上述章节顺序，用 Markdown 格式输出每个章节的回答内容。"
     )
 
-    try:
-        from openai import OpenAI
-
-        client = OpenAI(
-            api_key=effective_settings.deepseek_api_key,
-            base_url=effective_settings.deepseek_base_url.rstrip("/"),
-            timeout=effective_settings.deepseek_timeout_sec,
-        )
-        resp = client.chat.completions.create(
-            model=effective_settings.deepseek_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.2,
-            max_tokens=3000,
-        )
-        answer = (resp.choices[0].message.content or "").strip()
-
-        if resp.usage:
-            log_token_usage(
-                resp.usage.prompt_tokens,
-                resp.usage.completion_tokens,
-                user_id=user_id,
-                action_type="summary",
-            )
-
-        # 解析 LLM 返回：按 ### 分段
-        result: dict[str, str] = {}
-        current_section = ""
-        current_content: list[str] = []
-        for line in answer.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("### ") or (stripped.startswith("## ") and not stripped.startswith("## 论文")):
-                if current_section:
-                    result[current_section] = "\n".join(current_content).strip()
-                heading = re.sub(r"^#{2,3}\s*\d*\.?\s*", "", stripped).strip()
-                current_section = heading
-                current_content = []
-            elif current_section:
-                current_content.append(stripped)
-        if current_section:
-            result[current_section] = "\n".join(current_content).strip()
-
-        return result
-
-    except Exception:
+    result = await deepseek_agent.execute(
+        user_prompt,
+        system_prompt=system_prompt,
+        temperature=0.2,
+        max_tokens=3000,
+        user_id=user_id,
+        action_type="summary",
+    )
+    if result.error or not result.content:
         return {}
+
+    answer = str(result.content)
+
+    # 解析 LLM 返回：按 ### 分段
+    parsed: dict[str, str] = {}
+    current_section = ""
+    current_content: list[str] = []
+    for line in answer.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("### ") or (stripped.startswith("## ") and not stripped.startswith("## 论文")):
+            if current_section:
+                parsed[current_section] = "\n".join(current_content).strip()
+            heading = re.sub(r"^#{2,3}\s*\d*\.?\s*", "", stripped).strip()
+            current_section = heading
+            current_content = []
+        elif current_section:
+            current_content.append(stripped)
+    if current_section:
+        parsed[current_section] = "\n".join(current_content).strip()
+
+    return parsed
 
 
 __all__ = [
     "infer_domain_tags",
-    "extract_backdoor_indicators",
-    "extract_backdoor_structured_info",
     "collect_key_sentences",
-    "extract_template_headings",
     "extract_summary_by_template",
 ]

@@ -2,7 +2,7 @@ import copy
 import logging
 import traceback
 
-from .harness.app import get_app_harness
+from .dependencies import get_app_harness
 from .harness.config import get_harness_settings
 
 logger = logging.getLogger(__name__)

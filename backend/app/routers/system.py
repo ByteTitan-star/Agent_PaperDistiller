@@ -9,6 +9,11 @@ settings = get_settings()
 
 @router.get("/system/info", response_model=SystemInfoResponse)
 async def get_system_info() -> SystemInfoResponse:
+    """获取系统信息（应用名、模型配置、版本号等）。
+
+    前端页面：App.vue（全局系统引导面板 / 系统信息卡片）
+    用户操作：应用启动时自动加载，展示在首页系统信息区域
+    """
     use_deepseek = bool(settings.deepseek_api_key.strip())
     collaboration_mode = (
         f"Multi-Agent Collaboration: "

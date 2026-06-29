@@ -8,10 +8,13 @@
 
 import hashlib
 import json
+import logging
 import re
 import unicodedata
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import UploadFile
 
@@ -139,29 +142,36 @@ class OSSClient:
     def upload_file(self, local_path: Path, *key_parts: str) -> str:
         """上传本地文件到 OSS，返回对象 key。"""
         if not self._bucket:
+            logger.warning("[OSS] upload_file 跳过：bucket 未初始化")
             return ""
         key = self._key(*key_parts)
         self._bucket.put_object_from_file(key, str(local_path))
+        logger.info("[OSS] ✅ 上传成功 | key=%s | 本地文件=%s", key, local_path)
         return key
 
     def upload_bytes(self, data: bytes, content_type: str, *key_parts: str) -> str:
-        """上传字节数据到 OSS。"""
+        """上传字节数据到 OSS。没用到"""
         if not self._bucket:
+            logger.warning("[OSS] upload_bytes 跳过：bucket 未初始化")
             return ""
         key = self._key(*key_parts)
         headers = {"Content-Type": content_type}
         self._bucket.put_object(key, data, headers=headers)
-        return key
+        logger.info("[OSS] ✅ 上传字节数据成功 | key=%s | size=%d bytes | type=%s", key, len(data), content_type)
+        return key  # 返回对象 key "papers/2024/paper_123/paper.pdf"
 
     def get_signed_url(self, *key_parts: str, expires: int = 3600) -> str:
-        """生成签名下载 URL，默认 1 小时有效。"""
+        """生成签名下载 URL，默认 1 小时有效"""
         if not self._bucket:
+            logger.warning("[OSS] get_signed_url 跳过：bucket 未初始化")
             return ""
-        key = self._key(*key_parts)
-        return self._bucket.sign_url("GET", key, expires)
+        key = self._key(*key_parts)  # "papers/2024/paper_123/paper.pdf"
+        url = self._bucket.sign_url("GET", key, expires) # 生成签名下载 URL
+        logger.info("[OSS] ✅ 生成签名URL | key=%s | 有效期=%ds", key, expires)
+        return url
 
     def delete_prefix(self, *key_parts: str) -> None:
-        """删除指定前缀下的所有对象。"""
+        """删除指定前缀下的所有对象。没用到"""
         if not self._bucket:
             return
         prefix = self._key(*key_parts) + "/"
@@ -175,7 +185,7 @@ class OSSClient:
         return self._bucket.object_exists(key)
 
     def download_bytes(self, *key_parts: str) -> bytes | None:
-        """从 OSS 下载对象，返回 bytes 或 None。"""
+        """从 OSS 下载对象，返回 bytes 或 None。没用到"""
         if not self._bucket:
             return None
         key = self._key(*key_parts)
@@ -186,7 +196,7 @@ class OSSClient:
             return None
 
     def download_to_file(self, local_path: Path, *key_parts: str) -> bool:
-        """从 OSS 下载对象到本地文件，返回是否成功。"""
+        """从 OSS 下载对象到本地文件，返回是否成功。没用到"""
         if not self._bucket:
             return False
         key = self._key(*key_parts)
@@ -413,6 +423,64 @@ class VectorStore:
         # 过滤掉异常数据，确保返回干净的文本列表
         return [make_utf8_safe(doc) for doc in first_batch if isinstance(doc, str) and doc.strip()]
 
+    def query_global(self, question: str, top_k: int) -> list[dict]:
+        """
+        跨论文向量检索：搜索全部论文的 chunk，不按 paper_id 过滤。
+
+        与 query() 不同，此方法去掉 where 过滤，在全库范围内检索，
+        返回带元数据的结构化结果，以便调用方知道每个 chunk 来自哪篇论文。
+
+        Args:
+            question: 用户问题文本。
+            top_k: 返回的最大结果数。
+
+        Returns:
+            list[dict]: 每个元素包含 text、paper_id、chunk_index、distance。
+                        向量库不可用时返回空列表。
+        """
+        if not question.strip():
+            return []
+        if not self._ensure_ready():
+            return []
+
+        # 问题向量化
+        query_embeddings = self._embedder.encode([question], normalize_embeddings=True)
+        if hasattr(query_embeddings, "tolist"):
+            query_embeddings = query_embeddings.tolist()
+
+        # 不带 where 过滤，搜索全部 chunk
+        result = self._collection.query(
+            query_embeddings=query_embeddings,
+            n_results=max(1, top_k),
+            include=["documents", "distances", "metadatas"],
+        )
+
+        documents = result.get("documents", [])
+        metadatas = result.get("metadatas", [])
+        distances = result.get("distances", [])
+
+        if not documents:
+            return []
+
+        first_docs = documents[0] or []
+        first_metas = metadatas[0] or []
+        first_dists = distances[0] or []
+
+        results: list[dict] = []
+        for idx, doc in enumerate(first_docs):
+            if not isinstance(doc, str) or not doc.strip():
+                continue
+            meta = first_metas[idx] if idx < len(first_metas) else {}
+            dist = first_dists[idx] if idx < len(first_dists) else 0.0
+            results.append({
+                "text": make_utf8_safe(doc),
+                "paper_id": meta.get("paper_id", "unknown"),
+                "chunk_index": meta.get("chunk_index", -1),
+                "distance": dist,
+            })
+
+        return results
+
 
 class Storage:
     """
@@ -609,7 +677,8 @@ class Storage:
             source_name_file.write_text(make_utf8_safe(source_filename), encoding="utf-8")
 
         # 上传到 OSS
-        self._upload_to_oss(output_pdf, paper_id, "source.pdf")
+        self._upload_to_oss(output_pdf, paper_id, "source.pdf") # 上传 PDF 到 OSS
+        logger.info("[Storage] ✅ PDF 上传完成 | paper_id=%s | 文件=%s | 大小=%d bytes", paper_id, output_pdf, output_pdf.stat().st_size)
         return output_pdf
 
     def pdf_path(self, paper_id: str) -> Path:
@@ -620,23 +689,36 @@ class Storage:
         """
         preferred = self.processed_dir / paper_id / "source.pdf"
         if preferred.exists():
+            logger.info("[Storage] PDF 本地读取 | paper_id=%s | 路径=%s", paper_id, preferred)
             return preferred
-        return self.raw_dir / f"{paper_id}.pdf"
+        fallback = self.raw_dir / f"{paper_id}.pdf"
+        if fallback.exists():
+            logger.info("[Storage] PDF 回退读取（raw目录）| paper_id=%s | 路径=%s", paper_id, fallback)
+        else:
+            logger.warning("[Storage] PDF 文件不存在 | paper_id=%s", paper_id)
+        return fallback
 
     def oss_pdf_signed_url(self, paper_id: str, expires: int = 3600) -> str | None:
         """获取 PDF 的 OSS 签名 URL，不可用时返回 None。"""
         if not self.oss or not self.oss.available:
+            logger.info("[OSS] PDF 签名URL 跳过：OSS 未启用 | paper_id=%s", paper_id)
             return None
-        return self.oss.get_signed_url(paper_id, "source.pdf", expires=expires)
+        url = self.oss.get_signed_url(paper_id, "source.pdf", expires=expires)
+        if url:
+            logger.info("[OSS] ✅ PDF 签名URL 已生成 | paper_id=%s", paper_id)
+        else:
+            logger.warning("[OSS] ❌ PDF 签名URL 生成失败 | paper_id=%s", paper_id)
+        return url
 
     def _upload_to_oss(self, local_path: Path, *key_parts: str) -> None:
         """异步安全地将本地文件上传到 OSS（失败不阻塞）。"""
         if not self.oss or not self.oss.available:
             return
         try:
-            self.oss.upload_file(local_path, *key_parts)
-        except Exception:
-            pass
+            key = self.oss.upload_file(local_path, *key_parts) # 上传文件到 OSS
+            logger.info("[OSS] ✅ 文件上传成功 | key=%s | 本地=%s", key, local_path)
+        except Exception as exc:
+            logger.error("[OSS] ❌ 文件上传失败 | local=%s | error=%s", local_path, exc)
 
     def paper_output_dir(self, paper_id: str) -> Path:
         """
@@ -670,7 +752,9 @@ class Storage:
         """将处理结果写入文件"""
         output_file = self.paper_output_dir(paper_id) / self._result_output_name(kind, summary_template)
         output_file.write_text(make_utf8_safe(content), encoding="utf-8")
-        self._upload_to_oss(output_file, paper_id, output_file.name)
+        logger.info("[Storage] ✅ 结果已写入 | paper_id=%s | kind=%s | 文件=%s | 大小=%d chars",
+                     paper_id, kind, output_file, len(content))
+        self._upload_to_oss(output_file, paper_id, output_file.name) # 上传结果到 OSS
 
     def read_result(self, paper_id: str, kind: ResultKind, summary_template: str | None = None) -> str:
         """读取处理结果。本地优先，本地不存在时从 OSS 下载缓存后读取。"""
@@ -692,7 +776,7 @@ class Storage:
             encoding="utf-8",
         )
         # 上传到 OSS
-        self._upload_to_oss(path, paper_id, "chunks.json")
+        self._upload_to_oss(path, paper_id, "chunks.json") # 上传文本块到 OSS
 
         try:
             self.vector_store.upsert_chunks(paper_id, safe_chunks)
@@ -714,11 +798,23 @@ class Storage:
     def search_similar_chunks(self, paper_id: str, question: str, top_k: int) -> list[str]:
         """
         搜索与问题最相似的文本块。
-        
+
         如果向量检索失败，返回空列表（上层应回退到词法检索）。
         """
         try:
             return self.vector_store.query(paper_id=paper_id, question=question, top_k=top_k)
+        except Exception:
+            return []
+
+    def search_global_chunks(self, question: str, top_k: int) -> list[dict]:
+        """
+        跨全部论文搜索最相似的文本块（初排阶段使用）。
+
+        返回 list[dict]，每个元素包含 text、paper_id、chunk_index、distance。
+        向量库不可用时返回空列表。
+        """
+        try:
+            return self.vector_store.query_global(question=question, top_k=top_k)
         except Exception:
             return []
 
