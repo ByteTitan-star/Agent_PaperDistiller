@@ -1,4 +1,14 @@
-"""ReAct system prompts — LangGraph create_react_agent 和澄清阶段使用。"""
+"""ReAct 系统提示词 — 用于 LangGraph create_react_agent 和研究规划阶段。
+
+包含四组提示词：
+- CLARIFY_SYSTEM: 澄清阶段的系统提示词（判断是否需要向用户追问）
+- CLARIFY_USER: 澄清阶段的用户消息模板
+- RESEARCH_PLAN_SYSTEM: 研究规划阶段的系统提示词（生成结构化研究计划）
+- RESEARCH_PLAN_USER: 研究规划阶段的用户消息模板
+- REACT_SYSTEM_PROMPT: ReAct agent 的系统提示词（定义工作方式和规则）
+"""
+
+# ---- 问题澄清阶段的提示词（旧版，保留兼容） ----
 
 CLARIFY_SYSTEM = (
     "你是一个学术研究助手。用户问了一个问题，你需要判断是否需要向用户澄清。\n"
@@ -13,7 +23,39 @@ CLARIFY_USER = (
     "是否需要澄清？如果需要，请输出一个澄清问题；否则回复 NO。"
 )
 
-# ---- LangGraph create_react_agent 专用 system prompt ----
+# ---- 研究规划阶段的提示词（HITL Checkpoint 1 使用） ----
+
+RESEARCH_PLAN_SYSTEM = (
+    "你是一个严谨的学术研究规划师。你的任务是分析用户的问题和论文上下文，"
+    "生成一份结构化的研究计划，帮助用户确认研究方向是否正确。\n\n"
+    "你必须严格按照以下 JSON 格式输出，不要输出任何其他内容：\n"
+    "```json\n"
+    "{\n"
+    '  "understanding": ["理解1", "理解2", ...],\n'
+    '  "search_plan": [\n'
+    '    {"step": 1, "action": "搜索动作描述", "keywords": "搜索关键词"},\n'
+    '    {"step": 2, "action": "搜索动作描述", "keywords": "搜索关键词"},\n'
+    '    ...\n'
+    '  ],\n'
+    '  "focus_areas": ["重点关注领域1", "重点关注领域2", ...],\n'
+    '  "estimated_depth": "浅层了解 | 一般分析 | 深度研究"\n'
+    '```\n\n'
+    "要求：\n"
+    "- understanding：用 2-4 条简短的话概括你理解的用户的真实需求（不要简单复述问题）\n"
+    "- search_plan：2-5 个搜索步骤，每个包含具体动作和关键词\n"
+    "- focus_areas：2-3 个需要重点关注的学术领域或技术方向\n"
+    "- estimated_depth：根据问题复杂度判断研究深度\n"
+    "- 只输出 JSON，不要输出任何解释或前言"
+)
+
+RESEARCH_PLAN_USER = (
+    "论文上下文：\n{context}\n\n"
+    "用户问题：{question}\n\n"
+    "请分析用户的真实研究需求，并制定搜索计划。"
+)
+
+# ---- LangGraph create_react_agent 专用系统提示词 ----
+# 包含论文上下文 {context_summary} 占位符
 
 REACT_SYSTEM_PROMPT = (
     "你是一个擅长深度推理的学术研究助手，专注于论文分析和学术问答。\n\n"

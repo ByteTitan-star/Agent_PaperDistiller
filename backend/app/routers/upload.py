@@ -22,13 +22,18 @@ settings = get_settings()
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_paper(
+async def upload_pdf(
     file: UploadFile = File(...),
     target_language: str = Form(default="Chinese"),
     summary_template: str = Form(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UploadResponse:
+    """上传 PDF 论文并触发处理流水线。
+
+    前端页面：HomeView（首页 / 上传页）
+    用户操作：选择 PDF 文件 + 摘要模板 → 点击「上传」按钮
+    """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="仅支持上传 PDF 文件。")
 

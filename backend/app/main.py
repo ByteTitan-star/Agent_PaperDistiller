@@ -37,38 +37,21 @@ _root_logger.setLevel(logging.INFO)
 _root_logger.addHandler(_file_handler)
 _root_logger.addHandler(_console_handler)
 
-from .agent_skills import SkillRegistry
 from .config import get_settings
-from .pipeline.state_broker import TaskBroker
-from .storage import Storage
 
 # ---------------------------------------------------------------------------
-# 应用级依赖单例
+# 应用级依赖单例 —— 统一由 dependencies.py 构造（唯一来源，且 Storage 已挂载 OSS）。
+# 此处仅重导出，以兼容历史 `from ..main import storage`（routers/settings.py）。
+# 旧代码在 main.py 里又构造了一份 storage/broker/skill_registry，导致运行时存在两套
+# 实例（且 main 的那份 Storage 没挂 OSS），现已消除。
 # ---------------------------------------------------------------------------
 settings = get_settings()
 backend_root = Path(__file__).resolve().parents[1]
 app_root = Path(__file__).resolve().parent
 
-storage = Storage(
-    base_dir=backend_root / settings.data_dir,
-    templates_dir=backend_root / settings.templates_dir,
-    vector_provider=settings.vector_store_provider,
-    vector_collection_name=settings.vector_collection_name,
-    vector_db_subdir=settings.vector_db_subdir,
-    embedding_model_name=settings.embedding_model_name,
-    vector_distance_metric=settings.vector_distance_metric,
-)
-broker = TaskBroker()
+from .dependencies import storage, broker, skill_registry  # noqa: E402,F401
 
-skill_registry = SkillRegistry(
-    skills_root=app_root / settings.agent_skills_dir,
-    vector_db_dir=backend_root / settings.data_dir / settings.vector_db_subdir,
-    embedding_model_name=settings.embedding_model_name,
-    provider=settings.vector_store_provider,
-    collection_name=settings.skills_collection_name,
-)
-# 懒加载：首次 select_tools() 时自动 load()，避免启动时阻塞 torch
-_skill_registry_loaded = False
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +102,70 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # 初始化 AppHarness —— 让 harness 成为执行脊柱（agents/collaboration/tools/pipeline）。
+    # 失败仅记日志、不阻断启动；worker 会回退到 legacy 线性流水线。
+    if settings.harness_startup_enabled:
+        try:
+            from .dependencies import get_app_harness
+            _harness = get_app_harness()
+            await _harness.startup()
+            logger.info("AppHarness started: initialized=%s", _harness.is_initialized)
+        except Exception:
+            logger.exception("AppHarness startup failed; pipeline will fall back to legacy linear")
+
+    # 对外 MCP server（把技能暴露为标准 MCP 工具）。默认关闭，需 pip install mcp。
+    if settings.mcp_enabled:
+        try:
+            from .dependencies import get_tool_executor, get_skill_registry
+            from .harness.mcp.server import build_mcp_http_app
+            get_skill_registry()  # 确保技能已加载，MCP 才能列出工具
+            mcp_app = build_mcp_http_app(get_tool_executor())
+            if mcp_app is not None:
+                app.mount(settings.mcp_mount_path, mcp_app)
+                logger.info("MCP server mounted at %s", settings.mcp_mount_path)
+            else:
+                logger.warning("MCP server not mounted (no tools or mcp unavailable)")
+        except Exception:
+            logger.exception("MCP server mount failed; skipping")
+
+    # OpenTelemetry 自托管可观测（默认关闭）。启用后 FastAPI 请求 + harness Tracer spans 都会上报。
+    if settings.otel_enabled:
+        try:
+            from opentelemetry import trace
+            from opentelemetry.sdk.resources import Resource
+            from opentelemetry.sdk.trace import TracerProvider
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+
+            provider = TracerProvider(
+                resource=Resource.create({"service.name": settings.otel_service_name})
+            )
+            if settings.otel_exporter_otlp_endpoint:
+                from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+                provider.add_span_processor(
+                    BatchSpanProcessor(OTLPSpanExporter(endpoint=settings.otel_exporter_otlp_endpoint))
+                )
+            else:
+                provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+            trace.set_tracer_provider(provider)
+
+            try:
+                from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+                FastAPIInstrumentor.instrument_app(app)
+            except Exception:
+                logger.warning("FastAPIInstrumentor not available; only harness spans will be exported")
+
+            logger.info("OpenTelemetry enabled (exporter=%s)", settings.otel_exporter_otlp_endpoint or "console")
+        except Exception:
+            logger.exception("OTel init failed; tracing disabled")
+
     yield
+
+    if settings.harness_startup_enabled:
+        try:
+            from .dependencies import get_app_harness
+            await get_app_harness().shutdown()
+        except Exception:
+            logger.exception("AppHarness shutdown failed")
     await engine.dispose()
 
 
@@ -145,6 +191,7 @@ app.add_middleware(
 from .auth.router import router as auth_router
 from .routers.chat_history import router as chat_history_router
 from .routers.health import router as health_router
+from .routers.hitl import router as hitl_router
 from .routers.papers import router as papers_router
 from .routers.settings import router as settings_router
 from .routers.system import router as system_router
@@ -161,6 +208,7 @@ app.include_router(templates_router, prefix=api)
 app.include_router(upload_router, prefix=api)
 app.include_router(papers_router, prefix=api)
 app.include_router(chat_history_router, prefix=api)
+app.include_router(hitl_router, prefix=api)
 app.include_router(tasks_router, prefix=api)
 app.include_router(settings_router, prefix=api)
 

@@ -51,6 +51,11 @@ async def get_api_keys(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """获取用户已配置的 API Key（脱敏显示，如 sk-****xxxx）。
+
+    前端页面：SettingsView（设置页）
+    用户操作：进入设置页自动加载，回显已配置的 Key（掩码展示）
+    """
     result = await db.execute(
         select(UserApiConfig).where(UserApiConfig.user_id == user.id)
     )
@@ -81,6 +86,11 @@ async def update_api_keys(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """更新用户的 API Key 配置（AES 加密存储）。
+
+    前端页面：SettingsView（设置页）
+    用户操作：填写/修改 DeepSeek / Qwen / Tavily 的 API Key → 点击「保存配置」
+    """
     result = await db.execute(
         select(UserApiConfig).where(UserApiConfig.user_id == user.id)
     )
@@ -118,6 +128,11 @@ async def list_system_settings(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """管理员查看所有系统配置项。
+
+    前端页面：AdminView（管理员页）「系统配置」Tab
+    用户操作：管理员点击「系统配置」Tab 自动加载
+    """
     result = await db.execute(select(SystemSetting).order_by(SystemSetting.id))
     return [SystemSettingItem.model_validate(s) for s in result.scalars().all()]
 
@@ -128,6 +143,11 @@ async def update_system_settings(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """管理员更新系统配置（支持热更新运行时参数）。
+
+    前端页面：AdminView（管理员页）「系统配置」Tab
+    用户操作：修改系统参数（如默认模板等）→ 点击「保存系统配置」
+    """
     for item in body.settings:
         result = await db.execute(
             select(SystemSetting).where(SystemSetting.setting_key == item.setting_key)
@@ -163,6 +183,11 @@ async def admin_list_papers(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """管理员查看所有用户的论文列表。
+
+    前端页面：AdminView（管理员页）「论文管理」Tab
+    用户操作：管理员点击「论文管理」Tab 自动加载
+    """
     from ..schemas import PaperMeta
     from ..storage import domain_tag_from_template, unique_keep_order
 
@@ -190,6 +215,11 @@ async def admin_delete_paper(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """管理员删除任意用户的论文。
+
+    前端页面：AdminView（管理员页）「论文管理」Tab
+    用户操作：管理员在论文表格中点击「删除」按钮
+    """
     from ..models import Paper
 
     result = await db.execute(select(Paper).where(Paper.paper_id == paper_id))
@@ -211,7 +241,11 @@ async def token_stats_overview(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """系统级 Token 用量概览：总量、按模型分布、按日期趋势。"""
+    """系统级 Token 用量概览：总量、按模型/日期/操作类型分布。
+
+    前端页面：AdminView（管理员页）「Token 用量」Tab
+    用户操作：管理员点击「Token 用量」Tab 自动加载；切换时间粒度（日/周/月）或日期范围时刷新
+    """
     from ..models import TokenUsageLog
 
     filters = []
@@ -300,7 +334,11 @@ async def token_stats_users(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """所有用户的 Token 用量排行。"""
+    """所有用户的 Token 用量排行榜。
+
+    前端页面：AdminView（管理员页）「Token 用量」Tab 下方用户排行表格
+    用户操作：管理员切换日期范围时刷新排行数据
+    """
     from ..models import TokenUsageLog, User as UserModel
 
     filters = []
@@ -346,7 +384,11 @@ async def token_stats_user_detail(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """单个用户的 Token 用量明细。"""
+    """单个用户的 Token 用量明细（按日期趋势）。
+
+    前端页面：AdminView（管理员页）「Token 用量」Tab
+    用户操作：管理员在用户排行表格中点击某用户的「详情」按钮
+    """
     from ..models import TokenUsageLog
 
     filters = [TokenUsageLog.user_id == user_id]

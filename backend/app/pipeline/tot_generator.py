@@ -1,11 +1,12 @@
 # ToT多路评估生成算法
 import json
-import os
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .common_utils import log_token_usage
 from ..config import Settings
+
+if TYPE_CHECKING:
+    from ..harness.agents.tot_agent import ToTAgent
 
 
 def generate_rule_based_innovation_ideas(tags: list[str]) -> list[dict[str, str]]:
@@ -193,280 +194,70 @@ def normalize_tot_candidate(item: dict[str, Any], index: int) -> dict[str, Any]:
     }
 
 
-def generate_tot_idea(
+async def generate_tot_idea(
     title: str,
     tags: list[str],
     evidence: list[str],
-    settings: Settings,
+    tot_agent: "ToTAgent",
+    user_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """
-    【严格 ToT 多路评估生成】
+    【严格 ToT 多路评估生成 —— 委托 ToTAgent】
     实现"先生成 -> 后评估 -> 再 ToT 扩展与剪枝"的完整流程。
 
-    三阶段流程：
-    1. 生成阶段：使用 DeepSeek 生成多个候选方案（trials 次）
-    2. 评估阶段：使用 Qwen 对候选方案进行多维度评分
-    3. ToT 阶段：计算综合得分，排序后选择最优分支
-
-    评分公式：Score = α*ASR_Gain - β*Implementation_Cost + γ*Stealthiness
+    本函数不再自建 OpenAI client / 不再重复记账，而是统一交给 harness 的
+    ToTAgent（内部组合 DeepSeekAgent 生成 + QwenAgent 评估），token 用量由
+    各子 agent 的 BaseAgent.on_post_run 集中记录。
 
     参数:
         title: 论文标题
         tags: 领域标签
         evidence: 证据片段列表
-        settings: 配置对象（包含 API 密钥、模型参数等）
+        tot_agent: 已注入用户配置的 ToTAgent 实例
+        user_id: 用户 ID（token 记账归属）
 
     返回:
         (创新方案列表, 错误信息)。成功时错误信息为 None
     """
-    if not settings.enable_tot:
-        return [], "ToT 已关闭"
-    deepseek_key = settings.deepseek_api_key.strip()
-    if not deepseek_key:
-        return [], "DEEPSEEK_API_KEY 未配置"
-    qwen_key = settings.qwen_api_key.strip()
-    if not qwen_key:
-        return [], "QWEN_API_KEY 未配置"
-
-    try:
-        from openai import OpenAI
-    except Exception as exc:
-        return [], f"缺少 openai SDK: {exc}"
-
-    try:
-        generation_client = OpenAI(
-            api_key=deepseek_key,
-            base_url=settings.deepseek_base_url.rstrip("/"),
-            timeout=settings.deepseek_timeout_sec,
-        )
-        evaluation_client = OpenAI(
-            api_key=qwen_key,
-            base_url=settings.qwen_base_url.rstrip("/"),
-            timeout=settings.qwen_timeout_sec,
-        )
-    except Exception as exc:
-        return [], f"ToT 客户端初始化失败: {exc}"
-
-    generation_agent = settings.generation_model_name
-    evaluation_agent = settings.evaluation_model_name
-    collaboration_mode = build_multi_agent_collaboration_label(settings)
-
-    # 阶段 1：生成分支
-    trials = max(1, min(settings.tot_generation_trials, 5))
-    candidates: list[dict[str, Any]] = []
-    generation_errors: list[str] = []
-    for idx in range(trials):
-        generation_prompt = (   # 生成   上下文
-            "你是攻击策略设计者。请输出一个独立的创新方案，且与常见方案显著不同。\n"
-            "只输出 JSON，不要解释。JSON schema:\n"
-            "{\n"
-            '  "name": "string",\n'
-            '  "plan": "string",\n'
-            '  "validation": "string",\n'
-            '  "risk": "string",\n'
-            '  "asr_gain": 1-10,\n'
-            '  "implementation_cost": 1-10,\n'
-            '  "stealthiness": 1-10\n'
-            "}\n\n"
-            f"分支编号: {idx + 1}\n"
-            f"论文标题: {title}\n"
-            f"领域标签: {', '.join(tags)}\n"
-            f"证据片段: {' | '.join(evidence[:3])}\n"
-            "如果是 backdoor 方向，优先考虑 clean-label 投毒、触发器合成、特征碰撞等不同思路。"
-        )
-        try:
-            response = generation_client.chat.completions.create(
-                model=settings.deepseek_model,  # deepseek
-                messages=[
-                    {"role": "system", "content": "你是顶会级后门攻击学习方法设计专家。"},
-                    {"role": "user", "content": generation_prompt},
-                ],
-                temperature=settings.tot_generation_temperature,
-                max_tokens=900,
-            )
-
-            if response.usage:
-                log_token_usage(
-                    project_name=settings.app_name,
-                    model_name=settings.deepseek_model,
-                    prompt_tokens=response.usage.prompt_tokens,
-                    completion_tokens=response.usage.completion_tokens,
-                )
-
-            content = (response.choices[0].message.content or "").strip()
-            payload = extract_first_json_object(content)
-            if not payload:
-                generation_errors.append(f"分支 {idx + 1}: 输出非 JSON")
-                continue
-            candidate = normalize_tot_candidate(payload, len(candidates))
-            candidate["generated_by"] = generation_agent
-            candidate["generation_model_id"] = settings.deepseek_model
-            candidate["generation_step"] = f"[{generation_agent}] Generated branch {idx + 1}"
-            candidates.append(candidate)
-        except Exception as exc:
-            generation_errors.append(f"分支 {idx + 1}: {exc}")
-
-    if len(candidates) < 1:
-        reason = "；".join(generation_errors[:2]) if generation_errors else "生成阶段失败"
-        return [], f"ToT 生成阶段失败: {reason}"
-
-    # 阶段 2：评审打分
-    reviewer_prompt = (   # 评审上下文
-        "你是严谨的顶会评审（Reviewer）。"
-        "请对每个候选方案在以下维度打分（1-10）："
-        "asr_gain(越高越好)、implementation_cost(越低越好)、stealthiness(越高越好)。"
-        "仅输出 JSON。schema:\n"
-        "{\n"
-        '  "scores": [\n'
-        "    {\n"
-        '      "index": 0,\n'
-        '      "asr_gain": 1,\n'
-        '      "implementation_cost": 1,\n'
-        '      "stealthiness": 1,\n'
-        '      "comment": "string"\n'
-        "    }\n"
-        "  ],\n"
-        '  "overall_comment": "string"\n'
-        "}\n\n"
-        f"候选方案: {json.dumps(candidates, ensure_ascii=False)}"
+    result = await tot_agent.execute(
+        prompt=f"论文标题: {title}\n领域标签: {', '.join(tags)}",
+        title=title,
+        tags=tags,
+        evidence=evidence,
+        user_id=user_id,
     )
 
-    reviewer_scores: dict[int, dict[str, Any]] = {}
-    overall_comment = ""
-    try:
-        review_response = evaluation_client.chat.completions.create(
-            model=settings.qwen_model,  # Qwen大模型
-            messages=[
-                {"role": "system", "content": "你是客观严谨、以可复现性为核心的审稿人。"},
-                {"role": "user", "content": reviewer_prompt},
-            ],
-            temperature=settings.tot_reviewer_temperature,
-            max_tokens=900,
-        )
+    # ToTAgent 在 ToT 关闭 / 生成失败时会返回规则回退内容（content 非空），
+    # 此时直接采用；仅在完全没有内容时才视为失败。
+    if result.content:
+        content = result.content
+        if isinstance(content, list):
+            return content, None
+        return [content], None
 
-        if review_response.usage:
-            log_token_usage(
-                project_name=settings.app_name,
-                model_name=settings.qwen_model,
-                prompt_tokens=review_response.usage.prompt_tokens,
-                completion_tokens=review_response.usage.completion_tokens,
-            )
-
-        review_content = (review_response.choices[0].message.content or "").strip()
-        review_payload = extract_first_json_object(review_content) or {}
-        raw_scores = review_payload.get("scores", [])
-        if isinstance(raw_scores, list):
-            for item in raw_scores:
-                if not isinstance(item, dict):
-                    continue
-                idx = int(to_float(item.get("index", -1), -1))
-                if idx < 0 or idx >= len(candidates):
-                    continue
-                reviewer_scores[idx] = {
-                    "asr_gain": to_float(item.get("asr_gain", 5), 5.0),
-                    "implementation_cost": to_float(item.get("implementation_cost", 5), 5.0),
-                    "stealthiness": to_float(item.get("stealthiness", 5), 5.0),
-                    "comment": str(item.get("comment", "")).strip(),
-                }
-        overall_comment = str(review_payload.get("overall_comment", "")).strip()
-    except Exception as exc:
-        overall_comment = f"Reviewer 调用失败，已使用候选自评: {exc}"
-
-    # 阶段 3：ToT 扩展与剪枝
-    alpha = float(settings.tot_score_alpha)
-    beta = float(settings.tot_score_beta)
-    gamma = float(settings.tot_score_gamma)
-
-    for idx, candidate in enumerate(candidates):
-        review = reviewer_scores.get(idx, {})
-        asr_gain = to_float(review.get("asr_gain", candidate.get("asr_gain", 5)), 5.0)
-        implementation_cost = to_float(
-            review.get("implementation_cost", candidate.get("implementation_cost", 5)),
-            5.0,
-        )
-        stealthiness = to_float(review.get("stealthiness", candidate.get("stealthiness", 5)), 5.0)
-        score = alpha * asr_gain - beta * implementation_cost + gamma * stealthiness
-        candidate["final_score"] = round(score, 3)
-        candidate["asr_gain"] = asr_gain
-        candidate["implementation_cost"] = implementation_cost
-        candidate["stealthiness"] = stealthiness
-        candidate["review_comment"] = str(review.get("comment", "")).strip()
-        candidate["evaluated_by"] = evaluation_agent
-        candidate["evaluation_model_id"] = settings.qwen_model
-        candidate["evaluation_step"] = (
-            f"[{evaluation_agent}] Evaluated branch {idx + 1}: Score={candidate['final_score']}"
-        )
-
-    ranked_candidates = sorted(
-        candidates,
-        key=lambda item: to_float(item.get("final_score", 0), 0.0),
-        reverse=True,
-    )
-    keep_count = max(1, min(settings.tot_branch_count, len(ranked_candidates)))
-    expanded_candidates: list[dict[str, Any]] = []
-    for rank, candidate in enumerate(ranked_candidates[:keep_count], start=1):
-        branch = dict(candidate)
-        branch["tot_branch_id"] = f"B{rank}"
-        branch["tot_stage"] = "expanded"
-        branch["tot_step"] = (
-            f"[ToT] Expanded {branch['tot_branch_id']} and kept in top-{keep_count} after pruning."
-        )
-        expanded_candidates.append(branch)
-
-    if not expanded_candidates:
-        return [], "ToT 分支扩展失败"
-
-    winner = expanded_candidates[0]
-    winner["source"] = "ToT"
-    winner["collaboration_mode"] = collaboration_mode
-    winner["execution_order"] = (
-        f"先生成({generation_agent}) -> 后评估({evaluation_agent}) -> 再 ToT 分支扩展与剪枝"
-    )
-    winner["model_steps"] = [
-        winner.get("generation_step", ""),
-        winner.get("evaluation_step", ""),
-        winner.get("tot_step", ""),
-    ]
-    winner["selection_reason"] = (
-        f"Score = {alpha}*ASR_Gain - {beta}*Implementation_Cost + {gamma}*Stealthiness; "
-        f"winner score={winner.get('final_score')}; branch={winner.get('tot_branch_id')}. "
-        f"{overall_comment}".strip()
-    )
-    return [winner], None
+    return [], result.error or "ToT 生成失败"
 
 
-def generate_innovation_ideas(
+async def generate_innovation_ideas(
     title: str,
     tags: list[str],
     evidence: list[str],
-    settings: Settings | None = None,
+    tot_agent: "ToTAgent | None" = None,
+    user_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """
     【创新建议生成入口】
-    优先尝试 ToT 多路评估生成，失败时回退到规则库。
-
-    决策逻辑：
-    - 如果 settings 存在且 enable_tot 为 True，尝试 ToT 生成
-    - ToT 失败（无候选方案或配置缺失）则使用规则库
-    - 未提供 settings 时直接使用规则库
-
-    参数:
-        title: 论文标题
-        tags: 领域标签
-        evidence: 证据片段
-        settings: 可选的配置对象
-
-    返回:
-        (创新方案列表, 失败原因)。成功时失败原因为 None
+    优先尝试 ToT 多路评估生成（经 ToTAgent），失败时回退到规则库。
     """
-    if settings:
-        ideas, reason = generate_tot_idea(title=title, tags=tags, evidence=evidence, settings=settings)
+    if tot_agent is not None:
+        ideas, reason = await generate_tot_idea(
+            title=title, tags=tags, evidence=evidence, tot_agent=tot_agent, user_id=user_id
+        )
         if ideas:
             return ideas, None
-        fallback = generate_rule_based_innovation_ideas(tags)
-        return fallback, reason
+        return generate_rule_based_innovation_ideas(tags), reason
 
-    return generate_rule_based_innovation_ideas(tags), "未提供 settings，使用规则库"
+    return generate_rule_based_innovation_ideas(tags), "未提供 tot_agent，使用规则库"
 
 
 __all__ = [

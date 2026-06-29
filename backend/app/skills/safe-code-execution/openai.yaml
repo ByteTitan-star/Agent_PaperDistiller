@@ -3,6 +3,7 @@
     "type": "function",
     "function": {
       "name": "code_execution_tool",
+      "local_only": true,
       "description": "Run short and safe Python snippets for formula validation.",
       "parameters": {
         "type": "object",

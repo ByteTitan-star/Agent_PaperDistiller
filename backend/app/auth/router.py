@@ -37,6 +37,11 @@ settings = get_settings()
 # ---------------------------------------------------------------------------
 @router.post("/send-code")
 async def send_code(body: SendCodeRequest, db: AsyncSession = Depends(get_db)):
+    """发送邮箱验证码（注册用）。
+
+    前端页面：LoginView（登录注册页）注册流程
+    用户操作：填写邮箱 → 点击「发送验证码」按钮
+    """
     result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="该邮箱已注册")
@@ -51,6 +56,11 @@ async def send_code(body: SendCodeRequest, db: AsyncSession = Depends(get_db)):
 # ---------------------------------------------------------------------------
 @router.post("/verify-code")
 async def verify_code(body: VerifyCodeRequest, db: AsyncSession = Depends(get_db)):
+    """预验证验证码（不消耗，仅前端校验用）。
+
+    前端页面：LoginView（登录注册页）注册流程
+    用户操作：输入验证码后点击「下一步」（前端预校验，验证码不消耗）
+    """
     ok = await check_email_code(db, body.email, body.code, action="register")
     if not ok:
         raise HTTPException(status_code=400, detail="验证码错误或已过期")
@@ -62,6 +72,11 @@ async def verify_code(body: VerifyCodeRequest, db: AsyncSession = Depends(get_db
 # ---------------------------------------------------------------------------
 @router.post("/register")
 async def register(body: RegisterFinal, db: AsyncSession = Depends(get_db)):
+    """完成注册（消费验证码 + 创建用户）。
+
+    前端页面：LoginView（登录注册页）注册流程
+    用户操作：填写用户名 + 密码 → 点击「完成注册」按钮
+    """
     ok = await verify_email_code(db, body.email, body.code, action="register")
     if not ok:
         raise HTTPException(status_code=400, detail="验证码错误或已过期")
@@ -89,6 +104,11 @@ async def register(body: RegisterFinal, db: AsyncSession = Depends(get_db)):
 # ---------------------------------------------------------------------------
 @router.post("/login", response_model=TokenResponse)
 async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
+    """用户登录，返回 JWT token 和用户信息。
+
+    前端页面：LoginView（登录注册页）
+    用户操作：填写邮箱 + 密码 → 点击「登录」按钮
+    """
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.hashed_password):
@@ -110,6 +130,11 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
 # ---------------------------------------------------------------------------
 @router.get("/me", response_model=UserResponse)
 async def get_me(user: User = Depends(get_current_user)):
+    """获取当前登录用户信息。
+
+    前端页面：全局调用（App.vue 路由守卫 / authStore）
+    用户操作：① 页面刷新时自动验证身份 ② 登录成功后回调获取用户信息
+    """
     return UserResponse.model_validate(user)
 
 
@@ -118,6 +143,11 @@ async def get_me(user: User = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 @router.post("/resend-verify")
 async def resend_verify(body: ResendVerifyRequest, db: AsyncSession = Depends(get_db)):
+    """重发注册验证码。
+
+    前端页面：LoginView（登录注册页）注册流程
+    用户操作：验证码过期后点击「重发」按钮
+    """
     result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="该邮箱已注册")
@@ -132,6 +162,11 @@ async def resend_verify(body: ResendVerifyRequest, db: AsyncSession = Depends(ge
 # ---------------------------------------------------------------------------
 @router.post("/forgot-password")
 async def forgot_password(body: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
+    """忘记密码 — 发送重置验证码。
+
+    前端页面：LoginView（登录注册页）密码找回流程
+    用户操作：点击「忘记密码」→ 填写注册邮箱 → 提交
+    """
     result = await db.execute(select(User).where(User.email == body.email))
     if not result.scalar_one_or_none():
         return {"message": "如果该邮箱已注册，验证码已发送"}
@@ -146,6 +181,11 @@ async def forgot_password(body: PasswordResetRequest, db: AsyncSession = Depends
 # ---------------------------------------------------------------------------
 @router.post("/reset-password")
 async def reset_password(body: PasswordResetConfirm, db: AsyncSession = Depends(get_db)):
+    """重置密码（使用验证码验证身份）。
+
+    前端页面：LoginView（登录注册页）密码重置流程
+    用户操作：输入验证码 + 新密码 → 提交重置
+    """
     ok = await verify_email_code(db, body.email, body.token, action="reset_password")
     if not ok:
         raise HTTPException(status_code=400, detail="验证码错误或已过期")
@@ -168,6 +208,11 @@ async def list_users(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """管理员获取所有用户列表。
+
+    前端页面：AdminView（管理员页）「用户管理」Tab
+    用户操作：管理员点击「用户管理」Tab 自动加载用户表格
+    """
     result = await db.execute(select(User).order_by(User.id))
     return [UserResponse.model_validate(u) for u in result.scalars().all()]
 
@@ -179,6 +224,11 @@ async def change_role(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """管理员修改用户角色（user ↔ admin）。
+
+    前端页面：AdminView（管理员页）「用户管理」Tab
+    用户操作：管理员在用户表格中修改角色下拉框（user ↔ admin）
+    """
     if role not in ("user", "admin"):
         raise HTTPException(status_code=400, detail="无效角色")
     result = await db.execute(select(User).where(User.id == user_id))
@@ -197,6 +247,11 @@ async def change_status(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """管理员启用/禁用用户账号。
+
+    前端页面：AdminView（管理员页）「用户管理」Tab
+    用户操作：管理员在用户表格中切换启用/禁用开关
+    """
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -212,7 +267,11 @@ async def delete_user(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """管理员删除用户，删除前邮件通知该用户。"""
+    """管理员删除用户（先发邮件通知，再级联删除关联数据）。
+
+    前端页面：AdminView（管理员页）「用户管理」Tab
+    用户操作：管理员在用户表格中点击「删除用户」按钮
+    """
     if user_id == admin.id:
         raise HTTPException(status_code=400, detail="不能删除自己的账号")
     result = await db.execute(select(User).where(User.id == user_id))

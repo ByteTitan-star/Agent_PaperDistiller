@@ -1,17 +1,17 @@
 # Markdown/HTML报告生成
 import html
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .common_utils import utc_now_iso
 from ..config import Settings
-from .llm_extractor import (
-    collect_key_sentences,
-    extract_backdoor_indicators,
-    extract_backdoor_structured_info,
-)
+from .llm_extractor import collect_key_sentences, extract_summary_by_template
 from ..storage import domain_tag_from_template
 from .tot_generator import build_multi_agent_collaboration_label, generate_innovation_ideas
+
+if TYPE_CHECKING:
+    from ..harness.agents.base import BaseAgent
+    from ..harness.agents.tot_agent import ToTAgent
 
 
 def make_translation_markdown(
@@ -135,7 +135,7 @@ def make_translation_layout_html(
 </html>"""
 
 
-def make_summary_markdown(
+async def make_summary_markdown(
     title: str,
     template_name: str,
     target_language: str,
@@ -144,15 +144,17 @@ def make_summary_markdown(
     source_chunks: list[str],
     translated_chunks: list[str],
     text: str,
-    settings: Settings | None = None,
+    deepseek_agent: "BaseAgent",
+    user_id: int | None = None,
 ) -> str:
     """
     【生成摘要 Markdown】
-    生成核心摘要报告，针对后门攻击领域使用 LLM 结构化提取。
+    使用 LLM（DeepSeekAgent）根据模板问题从翻译后的文本中提取结构化摘要。
 
-    两种模式：
-    1. Backdoor Attack 模式：使用 LLM 提取详细结构化信息（数据集、ASR、CDA 等）
-    2. 通用模式：提取关键句和证据片段
+    流程：
+    1. 拼接翻译后的文本块
+    2. 调用 DeepSeekAgent 按模板章节逐题提取
+    3. 组装为 Markdown 报告
 
     参数:
         title: 论文标题
@@ -163,134 +165,69 @@ def make_summary_markdown(
         source_chunks: 原始文本块
         translated_chunks: 翻译后的文本块
         text: 完整论文文本
+        deepseek_agent: 已注入用户配置的 DeepSeekAgent 实例
+        user_id: 用户 ID（token 记账归属）
 
     返回:
         Markdown 格式的摘要报告
     """
     template_domain = domain_tag_from_template(template_name)
     display_chunks = translated_chunks or source_chunks
-    key_points = collect_key_sentences(display_chunks, max_items=8)
-    evidence = [chunk[:260] for chunk in display_chunks[:4]]
+    translated_text = "\n\n".join(display_chunks)
 
-    if template_domain == "Backdoor Attack":
-        structured = extract_backdoor_structured_info(text, title, settings=settings)
+    # Step 1: LLM 按模板提取（token 用量由 agent 的 on_post_run 集中记录）
+    llm_sections = await extract_summary_by_template(
+        translated_text=translated_text,
+        template_text=template_text,
+        title=title,
+        deepseek_agent=deepseek_agent,
+        user_id=user_id,
+    )
 
-        signals = extract_backdoor_indicators(text)
-        poison_rate = (
-            structured.get("poison_rates", [signals.get("Representative ASR", "N/A")])[0]
-            if structured.get("poison_rates")
-            else "N/A"
-        )
-        asr_metric = (
-            structured.get("asr_values", ["N/A"])[0]
-            if structured.get("asr_values")
-            else signals.get("Representative ASR", "N/A")
-        )
-        clean_metric = (
-            structured.get("clean_acc_drop", ["N/A"])[0]
-            if structured.get("clean_acc_drop")
-            else signals.get("Representative Clean Acc", "N/A")
-        )
-
-        lines = [
-            "# 论文深度解析报告",
-            "",
-            "## 1. 速览 (TL;DR)",
-            f"**所属领域**：{template_domain}",
-            f"**两句话概括**：{structured.get('two_sentence_summary', key_points[0] if key_points else 'N/A')}",
-            "",
-            "## 2. 核心关注点 (Core Focus)",
-            "",
-            "### 2.1 数据集与模型",
-            f"- **数据集**：{structured.get('datasets', signals.get('Primary Dataset', 'N/A'))}",
-            f"- **目标模型**：{structured.get('target_models', 'N/A')}",
-            "",
-            "### 2.2 实验基线与防御",
-            f"- **对比攻击方法**：{', '.join(structured.get('baselines', ['N/A']))}",
-            "- **测试的防御方法**：N/A（可后续扩展）",
-            "",
-            "### 2.3 关键指标",
-            f"- **中毒率 (Poison Rate)**：{poison_rate}",
-            f"- **攻击成功率 (ASR)**：{asr_metric}",
-            f"- **干净准确率下降 (CDA)**：{clean_metric}",
-            "",
-            "### 2.4 主要贡献",
-        ]
-        for contrib in structured.get("contributions", ["N/A"] * 3)[:3]:
-            lines.append(f"- {contrib}")
-
-        lines.extend(
-            [
-                "",
-                "## 3. 扩展关注点",
-                "",
-                "### 3.1 攻击与触发器设计",
-                f"- **攻击阶段**：{structured.get('attack_type', signals.get('Attack Setting', 'N/A'))}",
-                f"- **触发器类型**：{structured.get('trigger_type', signals.get('Trigger Type', 'N/A'))}",
-                "",
-                "### 3.2 局限性与风险",
-                "- **作者指出的局限**：N/A",
-                "- **潜在风险**：该攻击可在低中毒率下实现高 ASR，具有较高现实部署风险。",
-                "",
-                "## 4. 核心效果对比表",
-                "",
-                "| 项目          | 本文数值                  | 对比最佳方法 | 提升/下降 |",
-                "|---------------|---------------------------|--------------|-----------|",
-                f"| 中毒率        | {poison_rate}            | N/A         | N/A      |",
-                f"| ASR           | {asr_metric}             | N/A         | N/A      |",
-                f"| CDA           | {clean_metric}           | N/A         | N/A      |",
-                "",
-                f"- 论文标题：{title}",
-                f"- 生成时间：{utc_now_iso()}",
-                "",
-                "## 证据片段（中文）",
-            ]
-        )
-
-        if evidence:
-            for idx, item in enumerate(evidence, start=1):
-                lines.append(f"- 片段 {idx}: {item}")
-        else:
-            lines.append("- 暂无证据片段。")
-
-        return "\n".join(lines)
-
-    # 通用模板：保持简洁结构，避免额外块干扰前端布局。
+    # Step 2: 组装报告
     lines = [
-        f"# 论文摘要（{template_domain}）",
+        f"# {title}",
         "",
-        "## 基本信息",
-        f"- 论文标题：{title}",
-        f"- 摘要模板：{template_name}",
-        f"- 目标语种：{target_language}",
-        f"- 领域标签：{', '.join(tags)}",
-        f"- 生成时间：{utc_now_iso()}",
+        f"**所属领域**：{template_domain}",
+        f"**标签**：{', '.join(tags) if tags else 'N/A'}",
         "",
-        "## 核心要点（中文）",
     ]
-    if key_points:
-        for idx, point in enumerate(key_points, start=1):
-            lines.append(f"- 要点 {idx}: {point}")
-    else:
-        lines.append("- 未提取到稳定文本，建议检查 PDF 是否为可复制文本版。")
 
-    lines.extend(["", "## 证据片段（中文）"])
-    if evidence:
-        for idx, item in enumerate(evidence, start=1):
-            lines.append(f"- 片段 {idx}: {item}")
+    if llm_sections:
+        for heading, content in llm_sections.items():
+            lines.append(f"## {heading}")
+            lines.append("")
+            lines.append(content if content else "论文未提及")
+            lines.append("")
     else:
-        lines.append("- 暂无证据片段。")
+        # LLM 提取失败，回退到关键句
+        key_points = collect_key_sentences(display_chunks, max_items=8)
+        lines.append("## 核心要点")
+        lines.append("")
+        for point in key_points:
+            lines.append(f"- {point}")
+        lines.append("")
 
-    lines.append("")
+    # 元信息
+    lines.extend([
+        "---",
+        f"- 论文标题：{title}",
+        f"- 模板：{template_name}",
+        f"- 生成时间：{utc_now_iso()}",
+    ])
+
     return "\n".join(lines)
 
 
-def make_improvement_markdown(
+
+async def make_improvement_markdown(
     title: str,
     tags: list[str],
     source_chunks: list[str],
     translated_chunks: list[str],
     settings: Settings | None = None,
+    tot_agent: "ToTAgent | None" = None,
+    user_id: int | None = None,
 ) -> str:
     """
     【生成改进建议 Markdown】
@@ -323,11 +260,12 @@ def make_improvement_markdown(
         else "Multi-Agent Collaboration: DeepSeek-V3 (Gen) + Qwen3 (Eval)"
     )
     execution_order = "先生成 -> 后评估 -> 再 ToT 分支扩展与剪枝"
-    innovations, tot_note = generate_innovation_ideas(
+    innovations, tot_note = await generate_innovation_ideas(
         title=title,
         tags=tags,
         evidence=evidence,
-        settings=settings,
+        tot_agent=tot_agent,
+        user_id=user_id,
     )
 
     lines = [

@@ -52,6 +52,23 @@ def get_skill_registry() -> SkillRegistry:
 
 
 def get_app_harness():
-    """Lazily return the AppHarness singleton."""
-    from .harness.app import get_app_harness
-    return get_app_harness()
+    """返回注入了 storage/broker/skill_registry 单例的 AppHarness。
+
+    所有调用方（main lifespan、worker）都应走这里，确保 AppHarness 复用
+    dependencies.py 构造的同一套单例（含 OSS 挂载的 Storage），而不是另建一套。
+    """
+    from .harness.app import get_app_harness as _get_app_harness
+    return _get_app_harness(storage=storage, broker=broker, skill_registry=skill_registry)
+
+
+def get_tool_executor():
+    """返回统一的工具执行面：优先 harness 的 HarnessToolRegistry（带事件追踪/限流），
+    未启动时回退到裸 SkillRegistry。二者接口一致（select_tools/build_openai_tools/execute）。
+    """
+    try:
+        harness = get_app_harness()
+        if harness.is_initialized and harness.tool_harness is not None:
+            return harness.tool_harness
+    except Exception:
+        pass
+    return get_skill_registry()

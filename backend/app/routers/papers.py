@@ -19,7 +19,7 @@ from ..database import get_db
 from ..dependencies import broker, storage
 from ..models import ChatMessage, ChatSession, Paper, TaskRecord, User, UserApiConfig
 from ..schemas import ChatRequest, ChatResponse, ContentResponse, PaperMeta
-from ..services.chat import chat_with_paper, chat_with_paper_stream
+from ..services.chat import chat_with_paper_stream
 from ..storage import domain_tag_from_template, unique_keep_order
 
 router = APIRouter(tags=["papers"])
@@ -129,6 +129,11 @@ async def list_papers(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """获取当前用户的论文列表（分页）。
+
+    前端页面：DashboardView（论文总览页）
+    用户操作：进入论文总览页自动加载；翻页 / 筛选时再次调用
+    """
     base_query = select(Paper)
     if user.role != "admin":
         base_query = base_query.where(Paper.user_id == user.id)
@@ -174,6 +179,11 @@ async def get_paper(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """获取单篇论文的元数据。
+
+    前端页面：WorkspaceView（工作区页）
+    用户操作：在论文总览页点击某张论文卡片 → 进入工作区时自动加载
+    """
     paper = await _get_user_paper(paper_id, user, db)
     active_statuses = ["queued", "parsing", "translating", "summarizing", "critiquing"]
     task_q = await db.execute(
@@ -193,6 +203,12 @@ async def get_content(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """获取论文处理结果内容（翻译 / 摘要 / 创新改进）。
+
+    前端页面：WorkspaceView（工作区页）中间内容区
+    用户操作：点击「翻译」「摘要」「创新改进」Tab 时调用
+             kind 可选值：translation（翻译）、summary（摘要）、improvement（创新改进）
+    """
     if kind not in {"translation", "summary", "improvement"}:
         raise HTTPException(status_code=400, detail="不支持的内容类型。")
 
@@ -208,21 +224,34 @@ async def get_pdf(
     user: User = Depends(_get_user_for_embedded),
     db: AsyncSession = Depends(get_db),
 ):
+    """在线预览 PDF（内嵌显示）。
+
+    前端页面：WorkspaceView（工作区页）左侧 PDF 预览区
+    用户操作：进入工作区后自动加载，iframe 内嵌显示 PDF 原文
+    """
     await _get_user_paper(paper_id, user, db)
 
-    # 优先使用 OSS 签名 URL（302 重定向）
+    # 本地文件优先（避免 OSS 重定向触发下载）
+    pdf_path = storage.pdf_path(paper_id)
+    if pdf_path.exists():
+        logger.info("[PDF] ✅ 本地文件服务 | paper_id=%s | 路径=%s | 大小=%d bytes", paper_id, pdf_path, pdf_path.stat().st_size)
+        return FileResponse(
+            pdf_path,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline"},
+        )
+
+    # 本地不存在时回退 OSS（强制内嵌显示）
+    logger.info("[PDF] 本地文件不存在，尝试 OSS 回退 | paper_id=%s", paper_id)
     oss_url = storage.oss_pdf_signed_url(paper_id, expires=3600)
     if oss_url:
-        return RedirectResponse(url=oss_url)
+        sep = "&" if "?" in oss_url else "?"
+        inline_url = f"{oss_url}{sep}response-content-disposition=inline"
+        logger.info("[PDF] ✅ OSS 签名URL服务 | paper_id=%s", paper_id)
+        return RedirectResponse(url=inline_url)
 
-    pdf_path = storage.pdf_path(paper_id)
-    if not pdf_path.exists():
-        raise HTTPException(status_code=404, detail="PDF 文件不存在。")
-    return FileResponse(
-        pdf_path,
-        media_type="application/pdf",
-        headers={"Content-Disposition": "inline"},
-    )
+    logger.warning("[PDF] ❌ PDF 文件不存在（本地+OSS均无）| paper_id=%s", paper_id)
+    raise HTTPException(status_code=404, detail="PDF 文件不存在。")
 
 
 @router.get("/papers/{paper_id}/pdf/download")
@@ -231,6 +260,11 @@ async def download_pdf(
     user: User = Depends(_get_user_for_embedded),
     db: AsyncSession = Depends(get_db),
 ):
+    """下载 PDF 原文文件。
+
+    前端页面：WorkspaceView（工作区页）
+    用户操作：点击「下载 PDF」按钮
+    """
     paper = await _get_user_paper(paper_id, user, db)
     pdf_path = storage.pdf_path(paper_id)
     if not pdf_path.exists():
@@ -246,6 +280,11 @@ async def get_translation_layout(
     user: User = Depends(_get_user_for_embedded),
     db: AsyncSession = Depends(get_db),
 ):
+    """获取双栏翻译对照 HTML 页面。
+
+    前端页面：WorkspaceView（工作区页）
+    用户操作：点击「双栏翻译版」按钮，新窗口打开双语对照页面
+    """
     await _get_user_paper(paper_id, user, db)
     layout_path = storage.paper_output_dir(paper_id) / "translated_layout.html"
     if not layout_path.exists():
@@ -301,38 +340,6 @@ async def _save_message(db: AsyncSession, session_id: str, role: str, content: s
     db.add(msg)
 
 
-@router.post("/papers/{paper_id}/chat", response_model=ChatResponse)
-async def chat(
-    paper_id: str,
-    payload: ChatRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    paper = await _get_user_paper(paper_id, user, db)
-    user_settings = await _load_user_chat_settings(user, db)
-
-    session, history = await _get_or_create_session(db, user.id, paper_id, payload.session_id)
-    await _save_message(db, session.session_id, "user", payload.question, deep_search=payload.deep_search)
-    await db.commit()
-
-    result = await chat_with_paper(
-        paper_id, payload, storage,
-        summary_template=paper.summary_template,
-        settings=user_settings,
-        user_id=user.id,
-        history=history,
-    )
-
-    await _save_message(db, session.session_id, "assistant", result.answer,
-                        deep_search=payload.deep_search,
-                        thinking_chain=result.thinking_chain,
-                        contexts=result.contexts)
-    await db.commit()
-
-    result.session_id = session.session_id
-    return result
-
-
 @router.post("/papers/{paper_id}/chat/stream")
 async def chat_stream(
     paper_id: str,
@@ -340,6 +347,13 @@ async def chat_stream(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """与论文对话（流式 SSE，逐 token 输出）。
+
+    前端页面：WorkspaceView（工作区页）右侧聊天面板
+    用户操作：在聊天框输入问题 → 回车发送
+             - deep_search=false：基础问答模式（RAG 检索 + LLM 回答）
+             - deep_search=true：深度研究模式（LangGraph ReAct 多轮搜索 + 报告生成）
+    """
     paper = await _get_user_paper(paper_id, user, db)
     user_settings = await _load_user_chat_settings(user, db)
 
@@ -402,6 +416,11 @@ async def delete_paper(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """删除论文及其所有关联数据。
+
+    前端页面：DashboardView（论文总览页）
+    用户操作：点击论文卡片上的「删除」按钮（确认弹窗后执行）
+    """
     paper = await _get_user_paper(paper_id, user, db)
 
     # 取消正在运行的任务
@@ -427,6 +446,13 @@ async def delete_paper(
         raw_pdf = storage.base_dir / "raw" / f"{paper_id}.pdf"
         if raw_pdf.exists():
             raw_pdf.unlink()
+    except Exception:
+        pass
+
+    # 删除 OSS 对象
+    try:
+        if storage.oss and storage.oss.available:
+            storage.oss.delete_prefix(paper_id)
     except Exception:
         pass
 
