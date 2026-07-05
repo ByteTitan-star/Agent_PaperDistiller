@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...harness.agents.base import BaseAgent
 from .._types import CollaborationResult
 from ..events import EventBus
-from ...harness.agents.base import BaseAgent
 from .base import BaseCollaborationPattern
 
 
@@ -33,9 +33,9 @@ class RoundRobinPattern(BaseCollaborationPattern):
 
     def __init__(
         self,
-        agents: list[BaseAgent],             # 按顺序参与的 Agent 列表
-        event_bus: EventBus,                  # 事件总线
-        rounds: int = 1,                      # 循环轮次
+        agents: list[BaseAgent],  # 按顺序参与的 Agent 列表
+        event_bus: EventBus,  # 事件总线
+        rounds: int = 1,  # 循环轮次
         refinement_prompt: str | None = None,  # 自定义改进模板
     ) -> None:
         super().__init__(name="round_robin", agents=agents, event_bus=event_bus)
@@ -63,7 +63,7 @@ class RoundRobinPattern(BaseCollaborationPattern):
 
         for round_idx in range(self.rounds):
             for agent_idx, agent in enumerate(self.agents):
-                step_label = f"R{round_idx + 1}-{agent.name}"
+                f"R{round_idx + 1}-{agent.name}"
 
                 if agent_idx == 0 and round_idx == 0:
                     # 第一个 Agent 的第一轮直接使用原始输入
@@ -73,23 +73,28 @@ class RoundRobinPattern(BaseCollaborationPattern):
                     prompt = self.refinement_prompt.format(previous_output=current)
 
                 result = await agent.execute(prompt, **kwargs)
-                trace.append({
-                    "round": round_idx + 1,
-                    "agent": agent.name,
-                    "agent_index": agent_idx,
-                    "error": result.error,
-                    "content_preview": str(result.content)[:200] if result.content else None,
-                })
+                trace.append(
+                    {
+                        "round": round_idx + 1,
+                        "agent": agent.name,
+                        "agent_index": agent_idx,
+                        "error": result.error,
+                        "content_preview": str(result.content)[:200] if result.content else None,
+                    }
+                )
 
                 # 只在成功时更新当前文本（失败则保持不变）
                 if result.content and not result.error:
                     current = str(result.content)
 
-                self._emit("step_complete", {
-                    "round": round_idx + 1,
-                    "agent": agent.name,
-                    "has_error": result.error is not None,
-                })
+                self._emit(
+                    "step_complete",
+                    {
+                        "round": round_idx + 1,
+                        "agent": agent.name,
+                        "has_error": result.error is not None,
+                    },
+                )
 
         self._emit("round_robin_end")
         return CollaborationResult(

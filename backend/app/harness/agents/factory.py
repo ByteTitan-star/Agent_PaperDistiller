@@ -61,8 +61,8 @@ class AgentFactory:
         Returns:
             ToTAgent: 新的 ToT Agent 实例。
         """
-        generator = self.create_deepseek()   # 生成分支候选
-        evaluator = self.create_qwen()       # 评估和打分
+        generator = self.create_deepseek()  # 生成分支候选
+        evaluator = self.create_qwen()  # 评估和打分
         return ToTAgent(
             generator=generator,
             evaluator=evaluator,
@@ -101,9 +101,7 @@ class AgentFactory:
             # TRANSLATOR / PARSER 故意不实现为 agent：
             #   - TRANSLATOR 走 Google 免费翻译（非 LLM，见 pipeline/translator.py）
             #   - PARSER 走 PyPDF 同步解析（非 LLM，见 pipeline/document_parser.py）
-            raise ValueError(
-                f"AgentRole {role} 没有 agent 实现（TRANSLATOR/PARSER 为非 LLM 同步步骤，不经过 agent）"
-            )
+            raise ValueError(f"AgentRole {role} 没有 agent 实现（TRANSLATOR/PARSER 为非 LLM 同步步骤，不经过 agent）")
 
         # 缓存并返回
         self._agents[key] = agent

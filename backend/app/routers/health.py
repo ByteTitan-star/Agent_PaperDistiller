@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 router = APIRouter(tags=["health"])
 
+
 @router.get("/health")
 async def health() -> dict:
     """健康检查接口。

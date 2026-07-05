@@ -1,8 +1,8 @@
 """
-   FastAPI 应用入口：注册中间件、路由、lifespan。
+FastAPI 应用入口：注册中间件、路由、lifespan。
 """
+
 import logging
-import os
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -23,9 +23,7 @@ _log_fmt = logging.Formatter(
 )
 
 # 文件日志：按大小轮转，保留 5 个备份
-_file_handler = RotatingFileHandler(
-    _log_dir / "app.log", maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
-)
+_file_handler = RotatingFileHandler(_log_dir / "app.log", maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
 _file_handler.setFormatter(_log_fmt)
 
 # 控制台日志
@@ -49,7 +47,7 @@ settings = get_settings()
 backend_root = Path(__file__).resolve().parents[1]
 app_root = Path(__file__).resolve().parent
 
-from .dependencies import storage, broker, skill_registry  # noqa: E402,F401
+from .dependencies import broker, skill_registry, storage  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -67,15 +65,14 @@ async def lifespan(app: FastAPI):
 
     # 从 system_settings 表加载运行时配置 + 种子系统模板
     try:
+        from sqlalchemy import select
+
         from .database import async_session_factory
         from .models import SystemSetting, Template
         from .storage import domain_tag_from_template
-        from sqlalchemy import select
 
         async with async_session_factory() as session:
-            result = await session.execute(
-                select(SystemSetting).where(SystemSetting.setting_key == "default_template")
-            )
+            result = await session.execute(select(SystemSetting).where(SystemSetting.setting_key == "default_template"))
             setting = result.scalar_one_or_none()
             if setting and setting.setting_value:
                 storage.default_template = setting.setting_value
@@ -84,20 +81,18 @@ async def lifespan(app: FastAPI):
             if templates_dir.exists():
                 for md_file in templates_dir.glob("*.md"):
                     name = md_file.name
-                    existing = await session.execute(
-                        select(Template).where(
-                            Template.name == name, Template.is_system == True
-                        )
-                    )
+                    existing = await session.execute(select(Template).where(Template.name == name, Template.is_system))
                     if not existing.scalar_one_or_none():
                         content = md_file.read_text(encoding="utf-8")
-                        session.add(Template(
-                            name=name,
-                            content=content,
-                            domain_tag=domain_tag_from_template(name),
-                            is_system=True,
-                            user_id=None,
-                        ))
+                        session.add(
+                            Template(
+                                name=name,
+                                content=content,
+                                domain_tag=domain_tag_from_template(name),
+                                is_system=True,
+                                user_id=None,
+                            )
+                        )
                 await session.commit()
     except Exception:
         pass
@@ -107,6 +102,7 @@ async def lifespan(app: FastAPI):
     if settings.harness_startup_enabled:
         try:
             from .dependencies import get_app_harness
+
             _harness = get_app_harness()
             await _harness.startup()
             logger.info("AppHarness started: initialized=%s", _harness.is_initialized)
@@ -116,8 +112,9 @@ async def lifespan(app: FastAPI):
     # 对外 MCP server（把技能暴露为标准 MCP 工具）。默认关闭，需 pip install mcp。
     if settings.mcp_enabled:
         try:
-            from .dependencies import get_tool_executor, get_skill_registry
+            from .dependencies import get_skill_registry, get_tool_executor
             from .harness.mcp.server import build_mcp_http_app
+
             get_skill_registry()  # 确保技能已加载，MCP 才能列出工具
             mcp_app = build_mcp_http_app(get_tool_executor())
             if mcp_app is not None:
@@ -136,11 +133,10 @@ async def lifespan(app: FastAPI):
             from opentelemetry.sdk.trace import TracerProvider
             from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
-            provider = TracerProvider(
-                resource=Resource.create({"service.name": settings.otel_service_name})
-            )
+            provider = TracerProvider(resource=Resource.create({"service.name": settings.otel_service_name}))
             if settings.otel_exporter_otlp_endpoint:
                 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
                 provider.add_span_processor(
                     BatchSpanProcessor(OTLPSpanExporter(endpoint=settings.otel_exporter_otlp_endpoint))
                 )
@@ -150,11 +146,15 @@ async def lifespan(app: FastAPI):
 
             try:
                 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
                 FastAPIInstrumentor.instrument_app(app)
             except Exception:
                 logger.warning("FastAPIInstrumentor not available; only harness spans will be exported")
 
-            logger.info("OpenTelemetry enabled (exporter=%s)", settings.otel_exporter_otlp_endpoint or "console")
+            logger.info(
+                "OpenTelemetry enabled (exporter=%s)",
+                settings.otel_exporter_otlp_endpoint or "console",
+            )
         except Exception:
             logger.exception("OTel init failed; tracing disabled")
 
@@ -163,6 +163,7 @@ async def lifespan(app: FastAPI):
     if settings.harness_startup_enabled:
         try:
             from .dependencies import get_app_harness
+
             await get_app_harness().shutdown()
         except Exception:
             logger.exception("AppHarness shutdown failed")
@@ -216,4 +217,4 @@ app.include_router(settings_router, prefix=api)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8001, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8001, reload=True)  # nosec B104

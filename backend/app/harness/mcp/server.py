@@ -9,6 +9,7 @@
 - 动态构造 runner 函数的签名（来自技能 JSON schema 的 properties），
   让 FastMCP 生成准确的 inputSchema，而非空 schema。
 """
+
 from __future__ import annotations
 
 import inspect
@@ -92,8 +93,12 @@ def _make_runner(tool_executor: Any, name: str, input_schema: dict) -> Any:
     for pname, pschema in properties.items():
         default = inspect.Parameter.empty if pname in required else None
         params.append(
-            inspect.Parameter(pname, inspect.Parameter.KEYWORD_ONLY, default=default,
-                              annotation=_json_type_to_python(pschema))
+            inspect.Parameter(
+                pname,
+                inspect.Parameter.KEYWORD_ONLY,
+                default=default,
+                annotation=_json_type_to_python(pschema),
+            )
         )
     # 没有显式参数时，保留 **kwargs 以兼容任意输入
     if not params:

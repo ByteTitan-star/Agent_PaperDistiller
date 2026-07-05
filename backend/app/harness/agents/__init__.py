@@ -6,4 +6,4 @@ from .factory import AgentFactory
 from .qwen_agent import QwenAgent
 from .tot_agent import ToTAgent
 
-__all__ = ["BaseAgent", "DeepSeekAgent", "QwenAgent", "ToTAgent", "AgentFactory"]
+__all__ = ["AgentFactory", "BaseAgent", "DeepSeekAgent", "QwenAgent", "ToTAgent"]

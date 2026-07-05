@@ -29,12 +29,12 @@ class DeepSeekAgent(BaseAgent):
 
     def __init__(
         self,
-        event_bus: EventBus,       # 事件总线
+        event_bus: EventBus,  # 事件总线
         settings: HarnessSettings,  # 框架配置（含 DeepSeek API 密钥等）
     ) -> None:
         super().__init__(
             name=settings.generation_model_name,  # Agent 名称
-            role=AgentRole.GENERATOR,              # 角色为"生成器"
+            role=AgentRole.GENERATOR,  # 角色为"生成器"
             event_bus=event_bus,
             settings=settings,
         )
@@ -52,6 +52,7 @@ class DeepSeekAgent(BaseAgent):
         if self._client is not None:
             return self._client
         from openai import OpenAI
+
         self._client = OpenAI(
             api_key=self.settings.deepseek_api_key,
             base_url=self.settings.deepseek_base_url.rstrip("/"),
@@ -106,8 +107,8 @@ class DeepSeekAgent(BaseAgent):
         self,
         messages: list[dict[str, Any]],  # 完整的消息列表（多轮对话）
         *,
-        temperature: float = 0.8,   # 生成温度，默认 0.8（较高随机性，适合创意生成）
-        max_tokens: int = 900,       # 最大输出 token 数
+        temperature: float = 0.8,  # 生成温度，默认 0.8（较高随机性，适合创意生成）
+        max_tokens: int = 900,  # 最大输出 token 数
     ) -> AgentResult:
         """高级 API：接受完整消息列表而非单条 prompt。
 

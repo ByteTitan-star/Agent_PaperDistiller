@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import fnmatch
-from typing import Any, Callable
+from datetime import UTC
 
 from ._types import HarnessEvent, HookCallback
 
@@ -80,8 +80,9 @@ class EventBus:
         """
         # 如果事件没有时间戳，自动填充当前 UTC 时间
         if not event.timestamp:
-            from datetime import datetime, timezone
-            event.timestamp = datetime.now(timezone.utc).isoformat()
+            from datetime import datetime
+
+            event.timestamp = datetime.now(UTC).isoformat()
 
         # 构建事件匹配 key，格式为 "{layer}.{action}"
         event_key = f"{event.layer}.{event.action}"

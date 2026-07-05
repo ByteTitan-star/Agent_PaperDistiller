@@ -7,8 +7,9 @@
 from __future__ import annotations
 
 import enum
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 
 class AgentRole(enum.Enum):
@@ -22,6 +23,7 @@ class AgentRole(enum.Enum):
         PARSER: 解析器角色，负责文档解析和结构化提取。
         SUPERVISOR: 监督者角色，负责任务分解和结果合并。
     """
+
     GENERATOR = "generator"
     EVALUATOR = "evaluator"
     TRANSLATOR = "translator"
@@ -42,6 +44,7 @@ class LifecyclePhase(enum.Enum):
         ON_ERROR: 异常处理阶段。
         SHUTDOWN: 关闭/清理阶段。
     """
+
     INIT = "init"
     PRE_RUN = "pre_run"
     POST_RUN = "post_run"
@@ -63,9 +66,10 @@ class HarnessEvent:
         timestamp: 事件时间戳（UTC ISO 格式），由 EventBus.emit 自动填充。
         payload: 附带数据，不同动作携带不同内容。
     """
-    layer: str       # "agent" / "pipeline" / "tool" / "session" / "hitl" / "collaboration"
-    component: str   # 组件名称
-    action: str      # "init" / "pre_run" / "post_run" / "error" / ...
+
+    layer: str  # "agent" / "pipeline" / "tool" / "session" / "hitl" / "collaboration"
+    component: str  # 组件名称
+    action: str  # "init" / "pre_run" / "post_run" / "error" / ...
     timestamp: str = ""
     payload: dict[str, Any] = field(default_factory=dict)
 
@@ -90,6 +94,7 @@ class TraceSpan:
         status: 执行状态，"pending" / "ok" / "error"。
         metadata: 附带元数据，如 tags 列表、错误信息等。
     """
+
     span_id: str
     parent_id: str | None = None
     step_name: str = ""
@@ -109,6 +114,7 @@ class TokenUsage:
         completion_tokens: 模型输出消耗的 token 数。
         timestamp: 统计时间戳。
     """
+
     model_name: str
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -130,6 +136,7 @@ class AgentResult:
         error: 错误信息，执行成功时为 None。
         metadata: 附带元数据，如协作模式等额外信息。
     """
+
     content: Any = None
     token_usage: TokenUsage | None = None
     error: str | None = None
@@ -147,6 +154,7 @@ class CollaborationResult:
         trace: 协作过程的详细追踪记录（每一步的参与者、内容预览、错误等）。
         error: 错误信息，协作成功时为 None。
     """
+
     final_output: Any = None
     participants: list[str] = field(default_factory=list)
     rounds: int = 0

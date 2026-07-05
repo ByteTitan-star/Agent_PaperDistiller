@@ -93,6 +93,9 @@ export const getPaperById = (paperId) => client.get(`/api/papers/${paperId}`);
 export const getPaperContent = (paperId, kind) => client.get(`/api/papers/${paperId}/content/${kind}`);
 export const askPaper = (paperId, payload) => client.post(`/api/papers/${paperId}/chat`, payload);
 
+export const decideHitl = (hitlId, payload) => client.post(`/api/hitl/${hitlId}/decide`, payload);
+export const getHitlState = (hitlId) => client.get(`/api/hitl/${hitlId}`);
+
 // Chat History API
 export const listChatSessions = (paperId) => client.get(`/api/papers/${paperId}/chat/sessions`);
 export const getChatMessages = (sessionId) => client.get(`/api/chat/sessions/${sessionId}/messages`);

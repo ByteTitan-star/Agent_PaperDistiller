@@ -5,8 +5,8 @@ import logging
 from collections import defaultdict
 from typing import Any
 
-from .common_utils import utc_now_iso
 from ..schemas import TaskState
+from .common_utils import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,10 @@ class TaskBroker:
             self._tasks[task_id] = state
         logger.info(
             "Task updated: task_id=%s status=%s progress=%d%% msg=%s",
-            task_id, status, progress, message,
+            task_id,
+            status,
+            progress,
+            message,
         )
         await self._notify(task_id, state.model_dump())
 
@@ -220,7 +223,7 @@ class TaskBroker:
                     yield sse_event(payload)
                     if payload.get("status") in {"done", "failed"}:
                         break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": keep-alive\n\n"
         finally:
             self._subscribers[task_id].discard(queue)

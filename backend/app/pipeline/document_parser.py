@@ -6,7 +6,6 @@ from pypdf import PdfReader
 
 from .common_utils import remove_surrogates
 
-
 # 章节名映射表（英 -> 中）
 # 用于将英文论文中的章节标题自动转换为中文
 EN_TO_CN_SECTION_MAP: dict[str, str] = {
@@ -53,9 +52,7 @@ CN_HEADINGS = {
 PAGE_MARK_RE = re.compile(r"^\[Page\s+\d+\]\s*", re.IGNORECASE)
 
 # 英文章节标题的正则匹配模式
-EN_HEADING_PATTERN = "|".join(
-    re.escape(token) for token in sorted(EN_TO_CN_SECTION_MAP.keys(), key=len, reverse=True)
-)
+EN_HEADING_PATTERN = "|".join(re.escape(token) for token in sorted(EN_TO_CN_SECTION_MAP.keys(), key=len, reverse=True))
 
 # 带编号的章节标题匹配规则（如 "1. Introduction" 或 "2.3 Method"）
 NUMBERED_TOKEN_HEADING_RE = re.compile(
@@ -321,13 +318,13 @@ def split_text_into_sections(text: str) -> list[tuple[str, str]]:
 
 
 __all__ = [
-    "EN_TO_CN_SECTION_MAP",
     "CN_HEADINGS",
+    "EN_TO_CN_SECTION_MAP",
     "PAGE_MARK_RE",
-    "extract_text_from_pdf",
     "chunk_text",
-    "normalize_heading_name",
+    "extract_text_from_pdf",
     "normalize_heading_line",
+    "normalize_heading_name",
     "parse_section_heading",
     "split_text_into_sections",
 ]

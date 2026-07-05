@@ -67,6 +67,42 @@ npm run dev
 
 ## 📋 更新日志
 
+### v4.0（2026-07-05）
+
+**原生 Agent 运行时 + bioagent HITL 对齐 —— 从 LangGraph 旁路走向生产级 AgentLoop**。v4.0 在 v3.0 harness 地基上，引入独立 `agent/` 运行时（Loop / Bootstrap / Worker / SubAgent），深度搜索与论文流水线统一走 orchestrator；同时按 bioagent 协议对齐人机协同（HITL），并补齐 CI / pre-commit / 68 项单元测试。
+
+**Phase 0 · 原生 Agent 运行时**
+- 新增 `backend/app/agent/`：`AgentLoop`、`RuntimeBundle`、`InMemoryStreamBus`、`ToolRegistry` 自动发现
+- 新增 `backend/app/tools/` 生产工具面：web_search / arxiv_search / spawn_sub_agent / wait_sub_agents / pipeline_steps / execute_code / shell_command
+- 新增 `backend/app/sandbox/` 沙箱执行层，代码技能隔离运行
+- `services/agent_chat.py` 深度搜索改走 native AgentLoop 流式 SSE（替代 legacy LangGraph ReAct 旁路）
+
+**Phase 1 · 流水线编排收敛**
+- `harness/pipeline/orchestrator.py` 成为论文蒸馏唯一编排入口；`worker.py` 仅走 orchestrator
+- 删除死代码：`pipeline/workflow_graph.py`、`harness/react/langgraph_agent.py`、legacy harness pipeline 适配器残桩
+- 保留全部业务模块：document_parser / translator / tot_generator / renderer 等
+
+**Phase 2 · P0 生产修复**
+- 修复 per-user LLM 配置：移除全局 runtime 突变，任务级 `TurnConfig.user_settings` 注入
+- `SubAgentStore` 优雅降级 + 历史上下文 flag；`AgentWorker` 任务生命周期与异常隔离
+- `user_settings.py` 统一读取用户 API Key / 模型配置
+
+**Phase 3 · HITL bioagent 协议对齐（P1）**
+- 新增 `HitlCoordinator`：`HITL_REQUEST` / `HITL_RESPONSE` 经 StreamBus 广播 + `HitlWaiterRegistry` 唤醒
+- SSE 映射为 `hitl_request`（含 `biomap_hil` wrapper + legacy `hitl_approval` 兼容字段）
+- `POST /hitl/{id}/decide` → store 更新 + StreamBus 响应 + 持久化到 `chat_messages.contexts.hitl_part`
+- 深度搜索双检查点：`pre_search`（计划确认弹窗）+ `pre_report`（边生成边审，token 实时流式、done 延迟至审批后）
+- 前端 `WorkspaceView`：内联 HITL 卡片、历史回放、`session_id` 随决策提交
+
+**Phase 4 · 工程质量**
+- 新增 `.pre-commit-config.yaml`（ruff / mypy / bandit / secret-scan / markdownlint / conventional commits）
+- 新增 `.gitlab-ci.yml` + `pyproject.toml`（uv 依赖管理、`scripts/setup_dev.sh`）
+- 测试套件：`tests/unit/` 68 passed（agent loop、HITL coordinator、deep_search、tools、sandbox 等）
+
+> 注：Pipeline 内 `pre_critique` HITL（harness HITLManager）尚未迁入 HitlCoordinator，列为 v4.x 后续项；端到端请在 MySQL + API Key 环境联调确认。
+
+---
+
 ### v3.0（2026-06-28）
 
 **Harness 工程全量改造 —— 让 harness 成为唯一执行脊柱**。本次重构修复了一个根本性架构缺陷：此前 `AppHarness.startup()` 从未被调用，导致整个 harness 层（agents / collaboration / tools / pipeline 适配器）在运行时**全部是死代码**，真实流量绕过它们直调 `pipeline/workflow_graph`。v3.0 让 harness 真正接管所有 LLM 调用与工具执行，并补齐 2026 主流 Agent harness 概念（MCP / OTel / 真流式 / 健壮性）。
@@ -75,7 +111,7 @@ npm run dev
 - `AppHarness.startup()/shutdown()` 接入 FastAPI lifespan（`harness_startup_enabled` 开关，默认开，失败不阻断启动）
 - 单例收敛到 `dependencies.py`（消除 `main.py` 与 `dependencies.py` 各建一套 Storage/Broker/SkillRegistry 的重复，顺带修复 `main.py` 那份 Storage 未挂载 OSS 的 bug）
 - 修复致命 HITL bug：`pipeline/base.py` 调用了不存在的 `hitl_manager.check()` → 改为正确的 `interrupt()` + `wait_for_decision()`
-- `worker.py` 现在真正走 `pipeline_harness.run()`（此前因 startup 未跑而永远回退 legacy）
+- `worker.py` 走 `pipeline_orchestrator.run()`（论文流水线主路径）
 
 **Phase 1 · 流水线 LLM 调用全部走 harness agent**
 - 删除 `tot_generator` / `llm_extractor` 内自建的 OpenAI client（与 harness agent 完全重复），改为统一委托 `DeepSeekAgent` / `ToTAgent`
@@ -162,4 +198,3 @@ npm run dev
 ---
 
 *Developed with ❤️ by ByteTitan-star*
-

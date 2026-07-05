@@ -65,7 +65,7 @@ async def upload_pdf(
         status="processing",
         target_language=target_language,
         summary_template=summary_template,
-        year=dt.datetime.now(dt.timezone.utc).year,
+        year=dt.datetime.now(dt.UTC).year,
         authors=[],
         domain_tags=[template_domain],
         pdf_path=pdf_path,
@@ -96,7 +96,11 @@ async def upload_pdf(
     )
     logger.info(
         "Upload accepted: task_id=%s paper_id=%s file=%s template=%s user_id=%d",
-        task_id, paper_id, file.filename, summary_template, user.id,
+        task_id,
+        paper_id,
+        file.filename,
+        summary_template,
+        user.id,
     )
     asyncio.create_task(
         execute_pipeline(

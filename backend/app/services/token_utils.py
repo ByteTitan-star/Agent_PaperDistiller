@@ -37,7 +37,7 @@ def _extract_tokens(text: str) -> list[str]:
         segment = zh_match.group()
         # 每 2 个连续汉字组成一个 bigram
         for i in range(len(segment) - 1):
-            tokens.append(segment[i:i + 2])
+            tokens.append(segment[i : i + 2])
 
     # 英文单词（小写）
     for en_match in _EN_RE.finditer(text):

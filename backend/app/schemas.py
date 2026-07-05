@@ -1,6 +1,7 @@
 """
-    定义了系统各个接口交互的Pydantic数据模型
+定义了系统各个接口交互的Pydantic数据模型
 """
+
 from datetime import datetime
 from typing import Literal
 
@@ -128,6 +129,7 @@ class ChatMessageInfo(BaseModel):
     role: str
     content: str
     thinking_chain: list[str] | None = None
+    contexts: dict | None = None
     deep_search: bool = False
     created_at: str
 
@@ -148,6 +150,7 @@ class SystemInfoResponse(BaseModel):
 
 
 # ==================== Auth Schemas ====================
+
 
 class SendCodeRequest(BaseModel):
     email: EmailStr

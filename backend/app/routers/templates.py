@@ -3,8 +3,8 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import DataError
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ..auth.dependencies import get_current_admin, get_current_user
 from ..database import get_db
@@ -15,14 +15,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["templates"])
 
 
-async def _get_visible_template(
-    template_id: int, user: User, db: AsyncSession
-) -> Template:
-    result = await db.execute(
-        select(Template)
-        .options(selectinload(Template.owner))
-        .where(Template.id == template_id)
-    )
+async def _get_visible_template(template_id: int, user: User, db: AsyncSession) -> Template:
+    result = await db.execute(select(Template).options(selectinload(Template.owner)).where(Template.id == template_id))
     t = result.scalar_one_or_none()
     if not t:
         raise HTTPException(404, "模板不存在")
@@ -31,14 +25,8 @@ async def _get_visible_template(
     return t
 
 
-async def _get_owned_template(
-    template_id: int, user: User, db: AsyncSession
-) -> Template:
-    result = await db.execute(
-        select(Template)
-        .options(selectinload(Template.owner))
-        .where(Template.id == template_id)
-    )
+async def _get_owned_template(template_id: int, user: User, db: AsyncSession) -> Template:
+    result = await db.execute(select(Template).options(selectinload(Template.owner)).where(Template.id == template_id))
     t = result.scalar_one_or_none()
     if not t:
         raise HTTPException(404, "模板不存在")
@@ -78,11 +66,7 @@ def _template_to_detail(t: Template) -> TemplateDetail:
 
 async def _reload_template(template_id: int, db: AsyncSession) -> Template:
     """Fresh SELECT to eagerly load all columns (avoids MissingGreenlet)."""
-    result = await db.execute(
-        select(Template)
-        .options(selectinload(Template.owner))
-        .where(Template.id == template_id)
-    )
+    result = await db.execute(select(Template).options(selectinload(Template.owner)).where(Template.id == template_id))
     return result.scalar_one()
 
 
@@ -131,9 +115,7 @@ async def create_template(
     前端页面：SettingsView（设置页模板管理）
     用户操作：点击「新建模板」→ 填写名称/内容/领域标签 → 点击「保存」
     """
-    existing = await db.execute(
-        select(Template).where(Template.user_id == user.id, Template.name == body.name)
-    )
+    existing = await db.execute(select(Template).where(Template.user_id == user.id, Template.name == body.name))
     if existing.scalar_one_or_none():
         raise HTTPException(409, "同名模板已存在")
     t = Template(
@@ -150,7 +132,7 @@ async def create_template(
         raise HTTPException(
             422,
             "模板内容包含数据库不支持的字符，请检查 MySQL 表是否使用 utf8mb4 字符集。",
-        )
+        ) from e
     logger.info("Template created: id=%d name=%s user=%s", t.id, t.name, user.username)
     t = await _reload_template(t.id, db)
     return _template_to_detail(t)
@@ -173,9 +155,7 @@ async def upload_template(
     content = (await file.read()).decode("utf-8", errors="replace")
     name = file.filename
 
-    existing = await db.execute(
-        select(Template).where(Template.user_id == user.id, Template.name == name)
-    )
+    existing = await db.execute(select(Template).where(Template.user_id == user.id, Template.name == name))
     if existing.scalar_one_or_none():
         raise HTTPException(409, "同名模板已存在")
 
@@ -245,9 +225,7 @@ async def admin_list_templates(
     用户操作：管理员点击「模板管理」Tab 自动加载
     """
     result = await db.execute(
-        select(Template)
-        .options(selectinload(Template.owner))
-        .order_by(Template.created_at.desc())
+        select(Template).options(selectinload(Template.owner)).order_by(Template.created_at.desc())
     )
     return [
         {
@@ -276,11 +254,7 @@ async def admin_delete_template(
     前端页面：AdminView（管理员页）「模板管理」Tab
     用户操作：管理员在模板表格中点击「删除」按钮
     """
-    result = await db.execute(
-        select(Template)
-        .options(selectinload(Template.owner))
-        .where(Template.id == template_id)
-    )
+    result = await db.execute(select(Template).options(selectinload(Template.owner)).where(Template.id == template_id))
     t = result.scalar_one_or_none()
     if not t:
         raise HTTPException(404, "模板不存在")
@@ -297,4 +271,5 @@ async def admin_delete_template(
     # 异步通知模板所有者
     if owner_email:
         from ..auth.email_service import send_template_deleted_email
+
         await send_template_deleted_email(owner_email, owner_name, template_name)

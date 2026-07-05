@@ -1,6 +1,6 @@
 # 领域标签推断、关键句提取、模板引导摘要提取
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ..storage import domain_tag_from_template, unique_keep_order
 
@@ -188,7 +188,7 @@ async def extract_summary_by_template(
 
 
 __all__ = [
-    "infer_domain_tags",
     "collect_key_sentences",
     "extract_summary_by_template",
+    "infer_domain_tags",
 ]

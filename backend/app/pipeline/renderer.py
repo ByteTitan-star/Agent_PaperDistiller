@@ -1,12 +1,12 @@
 # Markdown/HTML报告生成
 import html
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from .common_utils import utc_now_iso
 from ..config import Settings
-from .llm_extractor import collect_key_sentences, extract_summary_by_template
 from ..storage import domain_tag_from_template
+from .common_utils import utc_now_iso
+from .llm_extractor import collect_key_sentences, extract_summary_by_template
 from .tot_generator import build_multi_agent_collaboration_label, generate_innovation_ideas
 
 if TYPE_CHECKING:
@@ -209,15 +209,16 @@ async def make_summary_markdown(
         lines.append("")
 
     # 元信息
-    lines.extend([
-        "---",
-        f"- 论文标题：{title}",
-        f"- 模板：{template_name}",
-        f"- 生成时间：{utc_now_iso()}",
-    ])
+    lines.extend(
+        [
+            "---",
+            f"- 论文标题：{title}",
+            f"- 模板：{template_name}",
+            f"- 生成时间：{utc_now_iso()}",
+        ]
+    )
 
     return "\n".join(lines)
-
 
 
 async def make_improvement_markdown(
@@ -277,7 +278,7 @@ async def make_improvement_markdown(
         f"- 执行顺序：{execution_order}",
         f"- 生成时间：{utc_now_iso()}",
         (
-            f"- 生成策略：ToT 分支评估（最佳分支输出）"
+            "- 生成策略：ToT 分支评估（最佳分支输出）"
             if innovations and innovations[0].get("source") == "ToT"
             else f"- 生成策略：规则库回退（原因：{tot_note or 'ToT 未启用'}）"
         ),
@@ -344,8 +345,8 @@ async def make_improvement_markdown(
 
 
 __all__ = [
-    "make_translation_markdown",
-    "make_translation_layout_html",
-    "make_summary_markdown",
     "make_improvement_markdown",
+    "make_summary_markdown",
+    "make_translation_layout_html",
+    "make_translation_markdown",
 ]

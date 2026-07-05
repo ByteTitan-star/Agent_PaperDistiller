@@ -30,12 +30,12 @@ class QwenAgent(BaseAgent):
 
     def __init__(
         self,
-        event_bus: EventBus,       # 事件总线
+        event_bus: EventBus,  # 事件总线
         settings: HarnessSettings,  # 框架配置（含 Qwen API 密钥等）
     ) -> None:
         super().__init__(
             name=settings.evaluation_model_name,  # Agent 名称
-            role=AgentRole.EVALUATOR,               # 角色为"评估器"
+            role=AgentRole.EVALUATOR,  # 角色为"评估器"
             event_bus=event_bus,
             settings=settings,
         )
@@ -52,6 +52,7 @@ class QwenAgent(BaseAgent):
         if self._client is not None:
             return self._client
         from openai import OpenAI
+
         # 优先使用环境变量中的 API 密钥
         api_key = os.getenv("DASHSCOPE_API_KEY", "").strip() or self.settings.qwen_api_key
         self._client = OpenAI(
@@ -109,7 +110,7 @@ class QwenAgent(BaseAgent):
         messages: list[dict[str, Any]],  # 完整的消息列表（多轮对话）
         *,
         temperature: float = 0.2,  # 生成温度，评估场景用低值
-        max_tokens: int = 900,      # 最大输出 token 数
+        max_tokens: int = 900,  # 最大输出 token 数
     ) -> AgentResult:
         """高级 API：接受完整消息列表而非单条 prompt。
 
