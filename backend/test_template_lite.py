@@ -1,15 +1,19 @@
 """极简模板测试 - 用 asyncmy 直接连 MySQL，不加载任何 app 模块。"""
-import asyncio
-import asyncmy
 
+import asyncio
+import os
+
+import asyncmy
 
 EMOJI_CONTENT = "# Test with emoji\n\n## Info\n- **Title**: Test\n- **Items**: item1\n\nDone."
 
 
 async def main():
     conn = await asyncmy.connect(
-        host="localhost", port=3306,
-        user="root", password="root223",
+        host="localhost",
+        port=3306,
+        user="root",
+        password=os.getenv("MYSQL_PASSWORD", "changeme"),
         database="AgentPaperDistriller",
         charset="utf8mb4",
     )
@@ -44,7 +48,7 @@ async def main():
         print(f"  id={row[0]} name={row[1]} content_len={len(row[2])} created_at={row[3]}")
         assert row[2] == EMOJI_CONTENT, f"content mismatch: expected {len(EMOJI_CONTENT)}, got {len(row[2])}"
         assert row[3] is not None, "created_at is None!"
-        print(f"  content matches, created_at present")
+        print("  content matches, created_at present")
 
         # 3. UPDATE
         print("=== TEST 3: UPDATE ===")
@@ -52,7 +56,7 @@ async def main():
         await conn.commit()
         await cur.execute("SELECT domain_tag FROM templates WHERE id=%s", (insert_id,))
         assert (await cur.fetchone())[0] == "Updated"
-        print(f"  UPDATE OK")
+        print("  UPDATE OK")
 
         # 4. DELETE
         print("=== TEST 4: DELETE ===")
@@ -60,7 +64,7 @@ async def main():
         await conn.commit()
         await cur.execute("SELECT COUNT(*) FROM templates WHERE id=%s", (insert_id,))
         assert (await cur.fetchone())[0] == 0
-        print(f"  DELETE OK")
+        print("  DELETE OK")
 
     conn.close()
     print("\n=== ALL TESTS PASSED ===")

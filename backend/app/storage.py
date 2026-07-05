@@ -25,9 +25,9 @@ DEFAULT_SUMMARY_TEMPLATE = "tinghua.md"
 
 # 结果类型到文件名的映射
 RESULT_FILE_MAP: dict[ResultKind, str] = {
-    "translation": "translated_full.md",      # 翻译结果
-    "summary": "summary_tinghua.md",          # 摘要结果
-    "improvement": "improvements.md",         # 改进建议
+    "translation": "translated_full.md",  # 翻译结果
+    "summary": "summary_tinghua.md",  # 摘要结果
+    "improvement": "improvements.md",  # 改进建议
 }
 
 # 模板文件名到领域标签的映射
@@ -50,7 +50,7 @@ def make_utf8_safe(text: str) -> str:
 def domain_tag_from_template(template_name: str) -> str:
     """
     根据模板文件名推断论文领域标签。
-    
+
     处理逻辑：
     - 先查映射表，有则直接返回
     - 包含"backdoor"和"defense" -> Backdoor Defense
@@ -75,18 +75,14 @@ def domain_tag_from_template(template_name: str) -> str:
 def slugify_title(title: str) -> str:
     """
     将论文标题转为URL安全的短字符串（slug）。
-    
+
     处理步骤：
     1. 规范化Unicode（NFKD分解）
     2. 移除非ASCII字符
     3. 将非字母数字字符转为下划线
     4. 截取前48字符
     """
-    ascii_text = (
-        unicodedata.normalize("NFKD", title)
-        .encode("ascii", errors="ignore")
-        .decode("ascii")
-    )
+    ascii_text = unicodedata.normalize("NFKD", title).encode("ascii", errors="ignore").decode("ascii")
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", ascii_text).strip("_").lower()
     if not slug:
         return "paper"
@@ -127,6 +123,7 @@ class OSSClient:
         if access_key_id and access_key_secret:
             try:
                 import oss2
+
                 auth = oss2.Auth(access_key_id, access_key_secret)
                 self._bucket = oss2.Bucket(auth, endpoint, bucket_name)
             except ImportError:
@@ -157,7 +154,12 @@ class OSSClient:
         key = self._key(*key_parts)
         headers = {"Content-Type": content_type}
         self._bucket.put_object(key, data, headers=headers)
-        logger.info("[OSS] ✅ 上传字节数据成功 | key=%s | size=%d bytes | type=%s", key, len(data), content_type)
+        logger.info(
+            "[OSS] ✅ 上传字节数据成功 | key=%s | size=%d bytes | type=%s",
+            key,
+            len(data),
+            content_type,
+        )
         return key  # 返回对象 key "papers/2024/paper_123/paper.pdf"
 
     def get_signed_url(self, *key_parts: str, expires: int = 3600) -> str:
@@ -166,7 +168,7 @@ class OSSClient:
             logger.warning("[OSS] get_signed_url 跳过：bucket 未初始化")
             return ""
         key = self._key(*key_parts)  # "papers/2024/paper_123/paper.pdf"
-        url = self._bucket.sign_url("GET", key, expires) # 生成签名下载 URL
+        url = self._bucket.sign_url("GET", key, expires)  # 生成签名下载 URL
         logger.info("[OSS] ✅ 生成签名URL | key=%s | 有效期=%ds", key, expires)
         return url
 
@@ -174,6 +176,8 @@ class OSSClient:
         """删除指定前缀下的所有对象。没用到"""
         if not self._bucket:
             return
+        import oss2
+
         prefix = self._key(*key_parts) + "/"
         for obj in oss2.ObjectIterator(self._bucket, prefix=prefix):
             self._bucket.delete_object(obj.key)
@@ -208,12 +212,10 @@ class OSSClient:
             return False
 
 
-
-
 class VectorStore:
     """
     基于 ChromaDB 的本地向量索引封装类。
-    
+
     核心功能：
     - 延迟初始化（第一次使用时才加载模型和数据库）
     - 文本向量化（使用 sentence-transformers）
@@ -222,12 +224,12 @@ class VectorStore:
 
     def __init__(
         self,
-        base_dir: Path,                    # 基础数据目录
-        db_subdir: str,                    # 向量数据库子目录名
-        provider: str,                     # 向量库提供商（目前仅支持chromadb）
-        collection_name: str,              # 集合名称（类似数据库表名）
-        embedding_model_name: str,         # 嵌入模型名称
-        distance_metric: str = "cosine",   # 距离度量方式：cosine/l2/ip
+        base_dir: Path,  # 基础数据目录
+        db_subdir: str,  # 向量数据库子目录名
+        provider: str,  # 向量库提供商（目前仅支持chromadb）
+        collection_name: str,  # 集合名称（类似数据库表名）
+        embedding_model_name: str,  # 嵌入模型名称
+        distance_metric: str = "cosine",  # 距离度量方式：cosine/l2/ip
     ) -> None:
         self.provider = provider.lower().strip()
         self.collection_name = collection_name
@@ -236,11 +238,11 @@ class VectorStore:
         self.db_dir = base_dir / db_subdir  # 向量数据库实际存储路径
 
         # 延迟初始化相关状态
-        self._ready = False                 # 是否已完成初始化
+        self._ready = False  # 是否已完成初始化
         self._disabled_reason: str | None = None  # 初始化失败原因
-        self._client: Any | None = None     # ChromaDB客户端
-        self._collection: Any | None = None # ChromaDB集合
-        self._embedder: Any | None = None   # 句子嵌入模型
+        self._client: Any | None = None  # ChromaDB客户端
+        self._collection: Any | None = None  # ChromaDB集合
+        self._embedder: Any | None = None  # 句子嵌入模型
 
     @property
     def available(self) -> bool:
@@ -258,7 +260,7 @@ class VectorStore:
     def _ensure_ready(self) -> bool:
         """
         延迟初始化：检查并完成向量库初始化。
-        
+
         初始化流程：
         1. 检查provider是否支持
         2. 导入chromadb依赖
@@ -266,7 +268,7 @@ class VectorStore:
         4. 创建持久化客户端
         5. 获取或创建集合
         6. 加载嵌入模型
-        
+
         任一环节失败都会记录原因并返回False，但不抛出异常。
         """
         if self._ready:
@@ -297,18 +299,18 @@ class VectorStore:
             self.db_dir.mkdir(parents=True, exist_ok=True)
             # 创建持久化客户端（数据存放到本地目录）
             self._client = chromadb.PersistentClient(path=str(self.db_dir))
-            
+
             # 设置HNSW索引的空间度量方式
             metadata = None
             if self.distance_metric in {"cosine", "l2", "ip"}:
                 metadata = {"hnsw:space": self.distance_metric}
-            
+
             # 获取或创建集合（如果不存在则自动创建）
             self._collection = self._client.get_or_create_collection(
                 name=self.collection_name,
                 metadata=metadata,
             )
-            
+
             # 加载句子嵌入模型（本地缓存，首次下载）
             self._embedder = SentenceTransformer(self.embedding_model_name)
             self._ready = True
@@ -321,18 +323,17 @@ class VectorStore:
     def _chunk_id(paper_id: str, index: int) -> str:
         """
         生成文本块的唯一标识符。
-        
+
         格式：{paper_id}:{index}:{hash}
         使用SHA1哈希确保ID的唯一性和稳定性。
         """
-        digest = hashlib.sha1(f"{paper_id}:{index}".encode("utf-8")).hexdigest()[:16]
+        digest = hashlib.sha1(f"{paper_id}:{index}".encode(), usedforsecurity=False).hexdigest()[:16]
         return f"{paper_id}:{index}:{digest}"
-
 
     def upsert_chunks(self, paper_id: str, chunks: list[str]) -> None:
         """
         将文本块存入向量数据库（插入或更新）。
-        
+
         流程：
         1. 清理文本（UTF-8安全）
         2. 生成唯一ID列表
@@ -340,7 +341,7 @@ class VectorStore:
         4. 删除该论文旧数据（避免重复）
         5. 文本向量化（embedding）
         6. 批量存入ChromaDB
-        
+
         注意：如果向量库未初始化，静默跳过不报错。
         """
         if not chunks:
@@ -370,28 +371,26 @@ class VectorStore:
         # 完成所有块的向量化
         embeddings = self._embedder.encode(docs, normalize_embeddings=True)
 
-
-
         if hasattr(embeddings, "tolist"):
             embeddings = embeddings.tolist()
 
         # 批量存入ChromaDB
         self._collection.add(
             ids=ids,
-            documents=docs,        # 原始文本（可选，用于结果返回）
-            metadatas=metadatas,   # 元数据（用于过滤）
-            embeddings=embeddings, # 向量（用于相似度搜索）
+            documents=docs,  # 原始文本（可选，用于结果返回）
+            metadatas=metadatas,  # 元数据（用于过滤）
+            embeddings=embeddings,  # 向量（用于相似度搜索）
         )
 
     def query(self, paper_id: str, question: str, top_k: int) -> list[str]:
         """
         向量相似度检索：根据问题查找最相关的文本块。
-        
+
         流程：
         1. 问题文本向量化（使用相同的嵌入模型）
         2. 在指定论文的块中搜索最相似的top_k个
         3. 返回原始文本列表
-        
+
         过滤条件：where={"paper_id": paper_id} 确保只查当前论文
         """
         if not question.strip():
@@ -402,15 +401,14 @@ class VectorStore:
         # 问题向量化
         query_embeddings = self._embedder.encode([question], normalize_embeddings=True)
 
-
         if hasattr(query_embeddings, "tolist"):
             query_embeddings = query_embeddings.tolist()
 
         # 执行相似度查询
         result = self._collection.query(
-            query_embeddings=query_embeddings,     # 查询向量
-            n_results=max(1, top_k),              # 至少返回1个
-            where={"paper_id": paper_id},          # 仅搜索指定论文的块   找论文对应的块进行快速检索
+            query_embeddings=query_embeddings,  # 查询向量
+            n_results=max(1, top_k),  # 至少返回1个
+            where={"paper_id": paper_id},  # 仅搜索指定论文的块   找论文对应的块进行快速检索
             include=["documents", "distances", "metadatas"],  # 返回文档内容和距离
         )
 
@@ -472,12 +470,14 @@ class VectorStore:
                 continue
             meta = first_metas[idx] if idx < len(first_metas) else {}
             dist = first_dists[idx] if idx < len(first_dists) else 0.0
-            results.append({
-                "text": make_utf8_safe(doc),
-                "paper_id": meta.get("paper_id", "unknown"),
-                "chunk_index": meta.get("chunk_index", -1),
-                "distance": dist,
-            })
+            results.append(
+                {
+                    "text": make_utf8_safe(doc),
+                    "paper_id": meta.get("paper_id", "unknown"),
+                    "chunk_index": meta.get("chunk_index", -1),
+                    "distance": dist,
+                }
+            )
 
         return results
 
@@ -486,7 +486,7 @@ class Storage:
     """
     文件与元数据存储层。管理所有数据的持久化
     生成目录的结果；调用模块的位置
-    
+
     职责：
     1. 管理目录结构（raw/processed/templates）
     2. 维护papers.json元数据
@@ -496,23 +496,23 @@ class Storage:
 
     def __init__(
         self,
-        base_dir: Path,                                    # 基础数据目录
-        templates_dir: Path,                               # 模板目录
-        vector_provider: str = "chromadb",                 # 向量库提供商
-        vector_collection_name: str = "paper_chunks",      # 向量集合名
-        vector_db_subdir: str = "vectordb",                # 向量库子目录
+        base_dir: Path,  # 基础数据目录
+        templates_dir: Path,  # 模板目录
+        vector_provider: str = "chromadb",  # 向量库提供商
+        vector_collection_name: str = "paper_chunks",  # 向量集合名
+        vector_db_subdir: str = "vectordb",  # 向量库子目录
         embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",  # 嵌入模型
-        vector_distance_metric: str = "cosine",            # 距离度量
-        oss_client: OSSClient | None = None,               # OSS 客户端（可选）
+        vector_distance_metric: str = "cosine",  # 距离度量
+        oss_client: OSSClient | None = None,  # OSS 客户端（可选）
     ) -> None:
         self.base_dir = base_dir
-        self.raw_dir = self.base_dir / "raw"               # 原始上传PDF
-        self.processed_dir = self.base_dir / "processed"   # 处理结果
-        self.meta_file = self.base_dir / "papers.json"     # 论文元数据
-        self.templates_dir = templates_dir                 # 模板文件
+        self.raw_dir = self.base_dir / "raw"  # 原始上传PDF
+        self.processed_dir = self.base_dir / "processed"  # 处理结果
+        self.meta_file = self.base_dir / "papers.json"  # 论文元数据
+        self.templates_dir = templates_dir  # 模板文件
         self.default_template: str = DEFAULT_SUMMARY_TEMPLATE  # 可在启动时从 DB 覆盖
-        self.oss = oss_client                              # OSS 客户端
-        
+        self.oss = oss_client  # OSS 客户端
+
         # 确保目录结构存在
         self._ensure_structure()
 
@@ -529,13 +529,13 @@ class Storage:
     def _ensure_structure(self) -> None:
         """
         确保必要的目录和默认文件存在。
-        
+
         创建：
         - base_dir/          根目录
         - base_dir/raw/      原始PDF存储
         - base_dir/processed/ 处理结果存储
         - templates_dir/     模板目录
-        
+
         如果不存在默认模板，创建tinghua.md模板。
         """
         self.base_dir.mkdir(parents=True, exist_ok=True)
@@ -595,7 +595,7 @@ class Storage:
     def list_papers(self) -> list[PaperMeta]:
         """
         获取所有论文列表，按创建时间倒序。
-        
+
         同时根据模板推断并补充领域标签。
         """
         papers: list[PaperMeta] = []
@@ -616,7 +616,7 @@ class Storage:
     def upsert_paper(self, payload: PaperMeta) -> None:
         """
         插入或更新论文元数据。
-        
+
         如果paper_id已存在则更新，否则追加。
         """
         papers = self._load_papers()
@@ -632,7 +632,7 @@ class Storage:
     def update_paper_status(self, paper_id: str, status: str, domain_tags: list[str] | None = None) -> None:
         """
         更新论文处理状态和领域标签。
-        
+
         领域标签会去重，并确保模板标签在前。
         """
         papers = self._load_papers()
@@ -650,11 +650,11 @@ class Storage:
     def save_upload(self, paper_id: str, upload: UploadFile, source_filename: str | None = None) -> Path:
         """
         保存用户上传的PDF文件。
-        
+
         双写策略：
         1. processed/{paper_id}/source.pdf（主存储）
         2. raw/{paper_id}.pdf（备份/兼容）
-        
+
         可选保存原始文件名。
         """
         output_pdf = self.paper_output_dir(paper_id) / "source.pdf"
@@ -677,8 +677,13 @@ class Storage:
             source_name_file.write_text(make_utf8_safe(source_filename), encoding="utf-8")
 
         # 上传到 OSS
-        self._upload_to_oss(output_pdf, paper_id, "source.pdf") # 上传 PDF 到 OSS
-        logger.info("[Storage] ✅ PDF 上传完成 | paper_id=%s | 文件=%s | 大小=%d bytes", paper_id, output_pdf, output_pdf.stat().st_size)
+        self._upload_to_oss(output_pdf, paper_id, "source.pdf")  # 上传 PDF 到 OSS
+        logger.info(
+            "[Storage] ✅ PDF 上传完成 | paper_id=%s | 文件=%s | 大小=%d bytes",
+            paper_id,
+            output_pdf,
+            output_pdf.stat().st_size,
+        )
         return output_pdf
 
     def pdf_path(self, paper_id: str) -> Path:
@@ -715,7 +720,7 @@ class Storage:
         if not self.oss or not self.oss.available:
             return
         try:
-            key = self.oss.upload_file(local_path, *key_parts) # 上传文件到 OSS
+            key = self.oss.upload_file(local_path, *key_parts)  # 上传文件到 OSS
             logger.info("[OSS] ✅ 文件上传成功 | key=%s | 本地=%s", key, local_path)
         except Exception as exc:
             logger.error("[OSS] ❌ 文件上传失败 | local=%s | error=%s", local_path, exc)
@@ -723,7 +728,7 @@ class Storage:
     def paper_output_dir(self, paper_id: str) -> Path:
         """
         获取论文的输出目录，如果不存在则创建。
-        
+
         路径：processed/{paper_id}/
         """
         output_dir = self.processed_dir / paper_id
@@ -752,9 +757,14 @@ class Storage:
         """将处理结果写入文件"""
         output_file = self.paper_output_dir(paper_id) / self._result_output_name(kind, summary_template)
         output_file.write_text(make_utf8_safe(content), encoding="utf-8")
-        logger.info("[Storage] ✅ 结果已写入 | paper_id=%s | kind=%s | 文件=%s | 大小=%d chars",
-                     paper_id, kind, output_file, len(content))
-        self._upload_to_oss(output_file, paper_id, output_file.name) # 上传结果到 OSS
+        logger.info(
+            "[Storage] ✅ 结果已写入 | paper_id=%s | kind=%s | 文件=%s | 大小=%d chars",
+            paper_id,
+            kind,
+            output_file,
+            len(content),
+        )
+        self._upload_to_oss(output_file, paper_id, output_file.name)  # 上传结果到 OSS
 
     def read_result(self, paper_id: str, kind: ResultKind, summary_template: str | None = None) -> str:
         """读取处理结果。本地优先，本地不存在时从 OSS 下载缓存后读取。"""
@@ -762,9 +772,8 @@ class Storage:
         if output_file.exists():
             return output_file.read_text(encoding="utf-8")
         # 本地不存在，尝试从 OSS 下载到本地缓存
-        if self.oss and self.oss.available:
-            if self.oss.download_to_file(output_file, paper_id, output_file.name):
-                return output_file.read_text(encoding="utf-8")
+        if self.oss and self.oss.available and self.oss.download_to_file(output_file, paper_id, output_file.name):
+            return output_file.read_text(encoding="utf-8")
         return ""
 
     def save_chunks(self, paper_id: str, chunks: list[str]) -> None:
@@ -776,7 +785,7 @@ class Storage:
             encoding="utf-8",
         )
         # 上传到 OSS
-        self._upload_to_oss(path, paper_id, "chunks.json") # 上传文本块到 OSS
+        self._upload_to_oss(path, paper_id, "chunks.json")  # 上传文本块到 OSS
 
         try:
             self.vector_store.upsert_chunks(paper_id, safe_chunks)
@@ -790,9 +799,8 @@ class Storage:
         if path.exists():
             return json.loads(path.read_text(encoding="utf-8"))
         # 本地不存在，尝试从 OSS 下载到本地缓存
-        if self.oss and self.oss.available:
-            if self.oss.download_to_file(path, paper_id, "chunks.json"):
-                return json.loads(path.read_text(encoding="utf-8"))
+        if self.oss and self.oss.available and self.oss.download_to_file(path, paper_id, "chunks.json"):
+            return json.loads(path.read_text(encoding="utf-8"))
         return []
 
     def search_similar_chunks(self, paper_id: str, question: str, top_k: int) -> list[str]:
@@ -825,7 +833,6 @@ class Storage:
             templates.append(path.name)
         return sorted(templates)
 
-
     def read_template(self, template_name: str) -> str:
         """
         读取模板内容（文件系统），如果不存在返回默认模板。
@@ -841,17 +848,16 @@ class Storage:
 
 async def resolve_template_content(template_name: str, user_id: int | None = None) -> str | None:
     """从数据库解析模板内容，优先用户私有，其次公开模板。"""
+    from sqlalchemy import select
+
     from .database import async_session_factory
     from .models import Template
-    from sqlalchemy import select, or_
 
     async with async_session_factory() as session:
         # 1. 用户私有模板
         if user_id is not None:
             result = await session.execute(
-                select(Template).where(
-                    Template.name == template_name, Template.user_id == user_id
-                )
+                select(Template).where(Template.name == template_name, Template.user_id == user_id)
             )
             t = result.scalar_one_or_none()
             if t:

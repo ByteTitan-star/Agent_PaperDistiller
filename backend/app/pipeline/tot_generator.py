@@ -157,8 +157,7 @@ def build_multi_agent_collaboration_label(settings: Settings) -> str:
         描述协同模式的字符串
     """
     return (
-        f"Multi-Agent Collaboration: "
-        f"{settings.generation_model_name} (Gen) + {settings.evaluation_model_name} (Eval)"
+        f"Multi-Agent Collaboration: {settings.generation_model_name} (Gen) + {settings.evaluation_model_name} (Eval)"
     )
 
 
@@ -261,11 +260,11 @@ async def generate_innovation_ideas(
 
 
 __all__ = [
-    "generate_rule_based_innovation_ideas",
-    "extract_first_json_object",
-    "to_float",
     "build_multi_agent_collaboration_label",
-    "normalize_tot_candidate",
-    "generate_tot_idea",
+    "extract_first_json_object",
     "generate_innovation_ideas",
+    "generate_rule_based_innovation_ideas",
+    "generate_tot_idea",
+    "normalize_tot_candidate",
+    "to_float",
 ]

@@ -1,5 +1,5 @@
-from typing import Any
 import xml.etree.ElementTree as ET
+from typing import Any
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
@@ -10,10 +10,7 @@ def run(query: str, max_results: int = 3, _context: dict[str, Any] | None = None
         return {"items": [], "error": "query is empty"}
 
     size = max(1, min(int(max_results), 5))
-    url = (
-        "https://export.arxiv.org/api/query?"
-        f"search_query=all:{quote_plus(safe_query)}&start=0&max_results={size}"
-    )
+    url = f"https://export.arxiv.org/api/query?search_query=all:{quote_plus(safe_query)}&start=0&max_results={size}"
     req = Request(url, headers={"User-Agent": "paper-agent/1.0"})
 
     try:

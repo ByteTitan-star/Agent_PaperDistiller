@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any
 
@@ -40,14 +41,14 @@ class ToTAgent(BaseAgent):
 
     def __init__(
         self,
-        generator: DeepSeekAgent,     # 生成分支的 Agent（DeepSeek）
-        evaluator: QwenAgent,          # 评估分支的 Agent（Qwen）
-        event_bus: EventBus,           # 事件总线
-        settings: HarnessSettings,     # 框架配置
+        generator: DeepSeekAgent,  # 生成分支的 Agent（DeepSeek）
+        evaluator: QwenAgent,  # 评估分支的 Agent（Qwen）
+        event_bus: EventBus,  # 事件总线
+        settings: HarnessSettings,  # 框架配置
     ) -> None:
         super().__init__(
             name="ToTAgent",
-            role=AgentRole.CRITIC,      # 角色为"评论者"
+            role=AgentRole.CRITIC,  # 角色为"评论者"
             event_bus=event_bus,
             settings=settings,
         )
@@ -67,7 +68,13 @@ class ToTAgent(BaseAgent):
             normalize_tot_candidate,
             to_float,
         )
-        return extract_first_json_object, generate_rule_based_innovation_ideas, normalize_tot_candidate, to_float
+
+        return (
+            extract_first_json_object,
+            generate_rule_based_innovation_ideas,
+            normalize_tot_candidate,
+            to_float,
+        )
 
     async def _do_run(self, prompt: str, **kwargs: object) -> AgentResult:
         """执行完整的 ToT 流程：生成 → 评估 → 剪枝。
@@ -121,9 +128,9 @@ class ToTAgent(BaseAgent):
 
     async def _generate_branches(
         self,
-        title: str,           # 论文标题
-        tags: list[str],       # 领域标签
-        evidence: list[str],   # 证据片段
+        title: str,  # 论文标题
+        tags: list[str],  # 领域标签
+        evidence: list[str],  # 证据片段
         user_id: int | None = None,  # 用于 token 记账归属
     ) -> tuple[list[dict[str, Any]], list[str]]:
         """阶段 1：使用 DeepSeek 生成多个候选分支方案。
@@ -141,7 +148,7 @@ class ToTAgent(BaseAgent):
                 - candidates: 成功生成的候选方案列表（已标准化）。
                 - errors: 各分支生成失败的错误信息列表。
         """
-        extract_json, _, normalize, to_f = self._helpers()
+        extract_json, _, normalize, _to_f = self._helpers()
         trials = max(1, min(self.settings.tot_generation_trials, 5))
         candidates: list[dict[str, Any]] = []
         errors: list[str] = []
@@ -190,7 +197,7 @@ class ToTAgent(BaseAgent):
     async def _evaluate_branches(
         self,
         candidates: list[dict[str, Any]],  # 待评估的候选分支列表
-        user_id: int | None = None,        # 用于 token 记账归属
+        user_id: int | None = None,  # 用于 token 记账归属
     ) -> tuple[dict[int, dict[str, Any]], str]:
         """阶段 2：使用 Qwen 对所有候选分支进行评估打分。
 
@@ -253,9 +260,9 @@ class ToTAgent(BaseAgent):
 
     def _expand_and_prune(
         self,
-        candidates: list[dict[str, Any]],      # 所有候选分支
+        candidates: list[dict[str, Any]],  # 所有候选分支
         reviewer_scores: dict[int, dict[str, Any]],  # 审稿评分结果
-        overall_comment: str,                    # 审稿总体评价
+        overall_comment: str,  # 审稿总体评价
     ) -> dict[str, Any]:
         """阶段 3：计算综合评分、排序、选出最优分支。
 
@@ -326,7 +333,5 @@ class ToTAgent(BaseAgent):
     async def aclose(self) -> None:
         """关闭组合的两个子 agent（generator / evaluator）的底层连接。"""
         for sub in (self.generator, self.evaluator):
-            try:
+            with contextlib.suppress(Exception):
                 await sub.aclose()
-            except Exception:
-                pass

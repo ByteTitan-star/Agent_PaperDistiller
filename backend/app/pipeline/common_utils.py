@@ -2,7 +2,6 @@ import datetime as dt
 import os
 import re
 
-
 # 清理 UTF-16 代理字符，避免 JSON/Markdown 序列化异常。
 SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
 
@@ -50,7 +49,7 @@ def log_token_usage(
 
     lines: list[str] = []
     if os.path.exists(TOKEN_MD_PATH):
-        with open(TOKEN_MD_PATH, "r", encoding="utf-8") as f:
+        with open(TOKEN_MD_PATH, encoding="utf-8") as f:
             lines = f.readlines()
 
     # 1. 提取历史日志数据
@@ -136,17 +135,14 @@ def log_token_usage(
     # 双写：异步写入数据库
     try:
         import asyncio
+
         from ..services.token_logger import log_token_to_db
 
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            asyncio.ensure_future(
-                log_token_to_db(user_id, model_name, prompt_tokens, completion_tokens, action_type)
-            )
+            asyncio.ensure_future(log_token_to_db(user_id, model_name, prompt_tokens, completion_tokens, action_type))
         else:
-            loop.run_until_complete(
-                log_token_to_db(user_id, model_name, prompt_tokens, completion_tokens, action_type)
-            )
+            loop.run_until_complete(log_token_to_db(user_id, model_name, prompt_tokens, completion_tokens, action_type))
     except Exception:
         pass
 
@@ -163,7 +159,7 @@ def utc_now_iso() -> str:
     返回:
         ISO 8601 格式的 UTC 时间字符串，例如: "2024-01-15T08:30:00+00:00"
     """
-    return dt.datetime.now(dt.timezone.utc).isoformat()
+    return dt.datetime.now(dt.UTC).isoformat()
 
 
 def remove_surrogates(text: str) -> str:
@@ -184,4 +180,4 @@ def remove_surrogates(text: str) -> str:
     return SURROGATE_RE.sub("", text)
 
 
-__all__ = ["SURROGATE_RE", "log_token_usage", "utc_now_iso", "remove_surrogates"]
+__all__ = ["SURROGATE_RE", "log_token_usage", "remove_surrogates", "utc_now_iso"]

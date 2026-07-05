@@ -9,9 +9,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from ...harness.agents.base import BaseAgent
 from .._types import CollaborationResult, HarnessEvent
 from ..events import EventBus
-from ...harness.agents.base import BaseAgent
 
 
 class BaseCollaborationPattern(ABC):
@@ -36,9 +36,9 @@ class BaseCollaborationPattern(ABC):
 
     def __init__(
         self,
-        name: str,                   # 协作模式名称
-        agents: list[BaseAgent],      # 参与 Agent 列表
-        event_bus: EventBus,          # 事件总线
+        name: str,  # 协作模式名称
+        agents: list[BaseAgent],  # 参与 Agent 列表
+        event_bus: EventBus,  # 事件总线
     ) -> None:
         self.name = name
         self.agents = agents

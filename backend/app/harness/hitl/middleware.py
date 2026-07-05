@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._types import HarnessEvent
-from ..events import EventBus
 from .base import HITLDecision, HITLManager
 
 

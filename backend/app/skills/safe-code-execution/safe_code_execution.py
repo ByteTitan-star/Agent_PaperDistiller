@@ -1,9 +1,8 @@
-from typing import Any
 import contextlib
 import io
 import math
 import re
-
+from typing import Any
 
 BLOCKED_PATTERN = re.compile(
     r"\b(import|open|exec|eval|compile|globals|locals|__|os|sys|subprocess|socket|pathlib|shutil|input)\b",
@@ -45,11 +44,7 @@ def run(code: str, _context: dict[str, Any] | None = None) -> dict[str, Any]:
     except Exception as exc:
         return {"error": str(exc)}
 
-    visible_locals = {
-        key: repr(value)[:200]
-        for key, value in safe_locals.items()
-        if not key.startswith("_")
-    }
+    visible_locals = {key: repr(value)[:200] for key, value in safe_locals.items() if not key.startswith("_")}
     return {
         "stdout": stdout.getvalue()[:2000],
         "locals": visible_locals,

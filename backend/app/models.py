@@ -1,6 +1,7 @@
 import datetime as dt
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -11,7 +12,6 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    JSON,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -22,9 +22,7 @@ class Base(DeclarativeBase):
 
 
 class TimestampMixin:
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
-    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
@@ -40,9 +38,7 @@ class User(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     username: Mapped[str] = mapped_column(String(100), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(
-        Enum("user", "admin", name="user_role_enum"), nullable=False, default="user"
-    )
+    role: Mapped[str] = mapped_column(Enum("user", "admin", name="user_role_enum"), nullable=False, default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     email_verify_token: Mapped[str | None] = mapped_column(String(128), default=None)
@@ -176,9 +172,7 @@ class ChatSession(Base, TimestampMixin):
     paper_id: Mapped[str] = mapped_column(String(100), nullable=False)
 
     user = relationship("User", back_populates="chat_sessions")
-    messages = relationship(
-        "ChatMessage", back_populates="session", lazy="selectin", cascade="all, delete-orphan"
-    )
+    messages = relationship("ChatMessage", back_populates="session", lazy="selectin", cascade="all, delete-orphan")
 
 
 # ---------------------------------------------------------------------------
@@ -189,17 +183,13 @@ class ChatMessage(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("chat_sessions.session_id"), nullable=False)
-    role: Mapped[str] = mapped_column(
-        Enum("user", "assistant", "system", name="chat_role_enum"), nullable=False
-    )
+    role: Mapped[str] = mapped_column(Enum("user", "assistant", "system", name="chat_role_enum"), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     thinking_chain: Mapped[dict | None] = mapped_column(JSON, default=None)
     contexts: Mapped[dict | None] = mapped_column(JSON, default=None)
     deep_search: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     token_usage: Mapped[dict | None] = mapped_column(JSON, default=None)
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
-    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     session = relationship("ChatSession", back_populates="messages")
 
@@ -222,9 +212,7 @@ class AuditLog(Base):
     resource_id: Mapped[str | None] = mapped_column(String(200), default=None)
     detail: Mapped[dict | None] = mapped_column(JSON, default=None)
     ip_address: Mapped[str | None] = mapped_column(String(45), default=None)
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
-    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
         Index("idx_audit_user", "user_id"),
@@ -248,9 +236,7 @@ class TokenUsageLog(Base):
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     action_type: Mapped[str] = mapped_column(String(100), nullable=False, default="chat")
     detail: Mapped[dict | None] = mapped_column(JSON, default=None)
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
-    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
         Index("idx_token_user", "user_id"),
@@ -261,8 +247,28 @@ class TokenUsageLog(Base):
 
 
 # ---------------------------------------------------------------------------
-# 11. 邮箱验证记录表
+# 12. Sub-agent 记录表（多 Agent 编排）
 # ---------------------------------------------------------------------------
+class SubAgentRecord(Base):
+    __tablename__ = "sub_agent_records"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    handle_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    parent_session_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    child_session_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    task_summary: Mapped[str | None] = mapped_column(Text, default=None)
+    result: Mapped[str | None] = mapped_column(Text, default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_sub_agent_parent", "parent_session_id"),
+        Index("idx_sub_agent_child", "child_session_id"),
+    )
+
+
 class EmailVerification(Base):
     __tablename__ = "email_verifications"
 
@@ -276,9 +282,7 @@ class EmailVerification(Base):
     )
     expires_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
-    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
         Index("idx_email_token", "email", "token"),

@@ -59,6 +59,7 @@ _logger.addHandler(_daily_handler)
 # 公共 API
 # ---------------------------------------------------------------------------
 
+
 def log_separator() -> None:
     """写入分隔线。"""
     _logger.info("=" * 80)
@@ -190,8 +191,12 @@ def log_final_result(
     _logger.info("  思考链步骤数：%d", len(thinking_chain))
     for i, step in enumerate(thinking_chain):
         _logger.info("    步骤[%d]：%s", i, step[:200])
-    _logger.info("  Token 用量：prompt=%d, completion=%d, total=%d",
-                 prompt_tokens, completion_tokens, prompt_tokens + completion_tokens)
+    _logger.info(
+        "  Token 用量：prompt=%d, completion=%d, total=%d",
+        prompt_tokens,
+        completion_tokens,
+        prompt_tokens + completion_tokens,
+    )
     _logger.info("  来源数量：%d", len(sources))
     for s in sources:
         _logger.info("    - %s | %s", s.get("title", "?")[:60], s.get("url", ""))
@@ -212,5 +217,6 @@ def log_error(stage: str, error: Exception) -> None:
 def _now() -> str:
     """当前 UTC+8 时间字符串。"""
     from datetime import timedelta
+
     tz = timezone(timedelta(hours=8))
     return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")

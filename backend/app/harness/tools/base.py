@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...agent_skills import LoadedSkill, SkillRegistry
 from .._types import HarnessEvent
 from ..events import EventBus
-from ...agent_skills import LoadedSkill, SkillRegistry
 from .rate_limiter import RateLimiter
 
 
@@ -107,9 +107,9 @@ class HarnessToolRegistry:
 
     def execute(
         self,
-        tool_name: str,                           # 工具名称
-        arguments: dict[str, Any],                 # 工具参数
-        context: dict[str, Any] | None = None,     # 执行上下文（可选）
+        tool_name: str,  # 工具名称
+        arguments: dict[str, Any],  # 工具参数
+        context: dict[str, Any] | None = None,  # 执行上下文（可选）
     ) -> dict[str, Any]:
         """执行工具调用，前后发射事件并统计调用次数。
 

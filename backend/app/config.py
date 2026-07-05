@@ -46,25 +46,26 @@ class Settings(BaseSettings):
     rag_fallback_to_lexical: bool = True
 
     # 跨论文检索（深度研究）
-    global_retrieval_top_k: int = 50           # 初排：跨全库向量召回数量
-    global_retrieval_bm25_top_k: int = 50      # 初排：每篇论文 BM25 召回数
+    global_retrieval_top_k: int = 50  # 初排：跨全库向量召回数量
+    global_retrieval_bm25_top_k: int = 50  # 初排：每篇论文 BM25 召回数
 
     # 精排 Reranker
     reranker_model_name: str = "models/bge-reranker-v2-m3"
     reranker_enabled: bool = True
-    reranker_top_k: int = 10                   # 精排后保留数量
+    reranker_top_k: int = 10  # 精排后保留数量
     reranker_max_length: int = 512
 
     # Agent tool calling
     agent_enable_tools: bool = True
-    agent_max_tool_rounds: int = 4 # 工具调用最大轮数
+    agent_native_chat_enabled: bool = True
+    agent_max_tool_rounds: int = 4  # 工具调用最大轮数
     agent_skills_dir: str = "skills"  # relative to backend/app/
     skills_collection_name: str = "skills_collection"
     skill_retrieval_top_k: int = 5
     skill_similarity_threshold: float = 0.4
 
-    # LangGraph + ToT
-    langgraph_enabled: bool = True
+    # LangGraph + ToT (orchestrator is the only pipeline path; langgraph_enabled kept for admin UI compat)
+    langgraph_enabled: bool = False
     pipeline_translation_retry_limit: int = 1
     enable_tot: bool = True
     tot_branch_count: int = 3
@@ -98,16 +99,18 @@ class Settings(BaseSettings):
 
     # MCP（Model Context Protocol）：对外把技能暴露为标准 MCP server，对内让 ReAct 调用外部 MCP server。
     # 默认关闭；启用前需 pip install mcp langchain-mcp-adapters
-    mcp_enabled: bool = False              # 对外：挂载 FastMCP server 到 mcp_mount_path
+    mcp_enabled: bool = False  # 对外：挂载 FastMCP server 到 mcp_mount_path
     mcp_mount_path: str = "/mcp"
-    mcp_inbound_enabled: bool = False      # 对内：ReAct agent 加载外部 MCP server 作为工具
-    mcp_inbound_servers: str = ""          # 逗号分隔的外部 MCP server URL（SSE/HTTP），如 "http://localhost:9001/sse"
+    mcp_inbound_enabled: bool = False  # 对内：ReAct agent 加载外部 MCP server 作为工具
+    mcp_inbound_servers: str = ""  # 逗号分隔的外部 MCP server URL（SSE/HTTP），如 "http://localhost:9001/sse"
 
     # OpenTelemetry 自托管可观测（v3.0）。默认关闭；启用前需 pip install opentelemetry-*。
     # 选用 OTel 而非 LangSmith：自托管 exporter（Jaeger/Tempo）国内网络最稳，不依赖境外服务。
     otel_enabled: bool = False
     otel_service_name: str = "paper-distiller"
-    otel_exporter_otlp_endpoint: str = ""  # 空=dev 用 console exporter；非空走 OTLP（如 http://localhost:4318/v1/traces）
+    otel_exporter_otlp_endpoint: str = (
+        ""  # 空=dev 用 console exporter；非空走 OTLP（如 http://localhost:4318/v1/traces）
+    )
 
     # 工具限流（v3.0 Phase 6）：HarnessToolRegistry 在窗口内限制每个工具的最大调用次数。
     # max_calls=0 表示不限流。
@@ -117,9 +120,23 @@ class Settings(BaseSettings):
     # HITL for Deep Search（深度搜索人工审批）
     hitl_deep_search_enabled: bool = False  # 启用后深度搜索会在搜索前和生成报告前暂停等待用户确认
 
-    # Harness 启动开关：False 时 lifespan 不调用 AppHarness.startup()，
-    # 流水线回退到 legacy 线性实现。默认 True 让 harness 成为执行脊柱。
+    # Harness / Agent runtime
     harness_startup_enabled: bool = True
+    agent_max_iterations: int = 12
+    agent_service_role: str = "all-in-one"  # api | worker | all-in-one
+    redis_url: str = ""
+
+    # Sandbox (Docker)
+    sandbox_enabled: bool = False
+    sub_agent_store_memory: bool = False
+    sub_agent_store_auto_fallback: bool = True
+    sandbox_docker_image: str = "python:3.12-slim"
+    sandbox_timeout_sec: float = 120.0
+    sandbox_workspace_root: str = "data/sandbox"
+    sandbox_network_enabled: bool = False
+
+    # Multi-agent collaboration default (supervisor | round_robin | tot)
+    default_collaboration_mode: str = "tot"
 
     # Database
     DATABASE_URL: str = "mysql+asyncmy://root:root223@localhost:3306/AgentPaperDistriller?charset=utf8mb4"

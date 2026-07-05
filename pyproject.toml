@@ -1,0 +1,176 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-paper-distiller"
+version = "0.1.0"
+description = "Personal Scholar Agent — paper distillation with agent harness"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "asyncmy>=0.2.9",
+    "bcrypt>=4.0.0",
+    "chromadb>=0.5.0",
+    "email-validator>=2.0.0",
+    "fastapi>=0.116.1",
+    "langchain-mcp-adapters>=0.1.0",
+    "langchain-openai>=0.3.0",
+    "langgraph>=0.2.60",
+    "mcp>=1.2.0",
+    "openai>=1.0.0",
+    "opentelemetry-exporter-otlp>=1.24.0",
+    "opentelemetry-instrumentation-fastapi>=0.45b0",
+    "opentelemetry-sdk>=1.24.0",
+    "oss2>=2.18.0",
+    "passlib[bcrypt]>=1.7.4",
+    "pydantic-settings>=2.10.1",
+    "pypdf>=5.9.0",
+    "python-jose[cryptography]>=3.3.0",
+    "python-multipart>=0.0.20",
+    "pyyaml>=6.0.0",
+    "sentence-transformers>=3.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "sse-starlette>=1.6.0",
+    "tavily-python>=0.5.0",
+    "tenacity>=8.2.0",
+    "uvicorn[standard]>=0.35.0",
+]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "mypy>=1.20.1",
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.11",
+    "types-PyYAML>=6.0.12",
+]
+
+[tool.uv]
+index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["app*"]
+
+# --- Tool configuration (aligned with biomap-agents AGENTS.md) ---
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["backend"]
+extend-exclude = [
+    ".venv",
+    "build",
+    "dist",
+    "frontend/dist",
+    "frontend/node_modules",
+    "backend/models",
+    "UI_figures",
+]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "N", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003", "SIM105"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/test_*.py" = ["S101"]
+"tests/**" = ["S101", "E402", "RUF059"]
+"tests/conftest.py" = ["S101", "E402"]
+"backend/main.py" = ["E402"]
+"backend/app/main.py" = ["E402"]
+"backend/app/routers/**" = ["B008"]
+"backend/app/auth/**" = ["B008"]
+"backend/app/storage.py" = ["E402"]
+"backend/app/agent/worker.py" = ["RUF006"]
+"backend/app/routers/upload.py" = ["RUF006"]
+"backend/app/agent/loop.py" = ["RUF006"]
+"backend/app/pipeline/common_utils.py" = ["RUF006"]
+"backend/app/harness/agents/base.py" = ["B027"]
+"backend/app/harness/config.py" = ["RUF012"]
+"backend/app/agent_skills.py" = ["RUF012"]
+"backend/app/services/chat.py" = ["E501"]
+"backend/app/pipeline/renderer.py" = ["E501"]
+"backend/app/auth/email_service.py" = ["E501"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "backend"
+packages = ["app"]
+warn_unused_configs = true
+show_error_codes = true
+pretty = true
+strict = false
+ignore_missing_imports = true
+warn_unused_ignores = false
+exclude = [
+    "build/",
+    "dist/",
+    "frontend/",
+    "backend/models/",
+    "backend/test_template_api.py",
+    "backend/test_template_lite.py",
+]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["app.agent.bootstrap"]
+disable_error_code = ["arg-type"]
+
+[[tool.mypy.overrides]]
+module = [
+    "chromadb.*",
+    "langgraph.*",
+    "langchain.*",
+    "langchain_core.*",
+    "langchain_openai.*",
+    "sentence_transformers.*",
+    "oss2.*",
+    "asyncmy.*",
+    "tavily.*",
+    "mcp.*",
+    "opentelemetry.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+markers = [
+    "integration: tests requiring external services",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["backend/app"]
+omit = ["*/tests/*", "backend/test_*.py"]
+
+[tool.coverage.report]
+fail_under = 0
+show_missing = true
+skip_covered = false
+
+[tool.bandit]
+skips = ["B104", "B310", "B102", "B314", "B405"]
+exclude_dirs = [
+    ".cache",
+    ".venv",
+    "build",
+    "dist",
+    "frontend/node_modules",
+    "frontend/dist",
+    "backend/models",
+    "tests",
+    "UI_figures",
+]

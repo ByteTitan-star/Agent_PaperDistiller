@@ -24,6 +24,7 @@ async def _get_user_for_sse(
     if not payload:
         raise HTTPException(403, "Invalid token")
     from sqlalchemy import select
+
     result = await db.execute(select(User).where(User.id == int(payload["sub"])))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
@@ -42,6 +43,7 @@ async def get_task(task_id: str, user: User = Depends(get_current_user)) -> dict
     if not state:
         raise HTTPException(status_code=404, detail="任务不存在。")
     return state.model_dump()
+
 
 @router.get("/tasks/{task_id}/events")
 async def task_events(task_id: str, user: User = Depends(_get_user_for_sse)):

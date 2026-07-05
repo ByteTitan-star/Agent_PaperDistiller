@@ -1,4 +1,3 @@
-import time
 import logging
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -44,6 +43,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 auth_header = request.headers.get("authorization", "")
                 if auth_header.startswith("Bearer "):
                     from ..auth.jwt_utils import decode_access_token
+
                     payload = decode_access_token(auth_header[7:])
                     if payload:
                         user_id = int(payload.get("sub", 0))
@@ -61,7 +61,11 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                         resource_type=resource_type,
                         resource_id=resource_id,
                         ip_address=request.client.host if request.client else None,
-                        detail={"method": method, "path": path, "status_code": response.status_code},
+                        detail={
+                            "method": method,
+                            "path": path,
+                            "status_code": response.status_code,
+                        },
                     )
                     session.add(log_entry)
                     await session.commit()

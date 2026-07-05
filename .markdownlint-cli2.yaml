@@ -1,0 +1,19 @@
+# Markdownlint config — aligned with biomap-agents CI, relaxed for legacy README/TODO.
+config:
+  MD013: false
+  MD036: false
+  MD033: false
+  MD022: false
+  MD032: false
+  MD040: false
+  MD012: false
+
+globs:
+  - "**/*.md"
+ignores:
+  - ".venv/**"
+  - "backend/**/templates/**"
+  - "backend/app/templates/**"
+  - "backend/app/skills/**"
+  - "UI_figures/**"
+  - "TODO.md"

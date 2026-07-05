@@ -3,10 +3,11 @@
 依赖 langchain-mcp-adapters + mcp。默认关闭（settings.mcp_inbound_enabled），
 且 mcp 未安装时优雅降级为空工具列表，不影响 ReAct 正常运行。
 """
+
 from __future__ import annotations
 
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,9 @@ async def inbound_mcp_session(servers_csv: str):
         return
 
     try:
+        from langchain_mcp_adapters.tools import load_mcp_tools
         from mcp import ClientSession
         from mcp.client.sse import sse_client
-        from langchain_mcp_adapters.tools import load_mcp_tools
     except Exception as exc:
         logger.warning("MCP inbound disabled: missing mcp/langchain-mcp-adapters (%s)", exc)
         yield []
@@ -56,11 +57,7 @@ async def inbound_mcp_session(servers_csv: str):
         yield tools
     finally:
         for session, sse_ctx in opened:
-            try:
+            with suppress(Exception):
                 await session.__aexit__(None, None, None)
-            except Exception:
-                pass
-            try:
+            with suppress(Exception):
                 await sse_ctx.__aexit__(None, None, None)
-            except Exception:
-                pass

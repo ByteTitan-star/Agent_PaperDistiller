@@ -4,11 +4,11 @@
   --glass-border: rgba(255, 255, 255, 0.6);
   --glass-shadow: 0 8px 32px 0 rgba(100, 116, 139, 0.12);
   --glass-blur: blur(20px) saturate(180%);
-  
+
   --text-main: #1e293b;
   --text-muted: #64748b;
   --accent-color: #8b5cf6;
-  
+
   --font-heading: 'Outfit', sans-serif;
   --font-body: 'DM Sans', sans-serif;
 }
@@ -22,7 +22,7 @@ body {
   color: var(--text-main);
   background-color: #f8fafc;
   /* 极致柔和的多彩流光背景 */
-  background-image: 
+  background-image:
     radial-gradient(at 0% 0%, rgba(255, 228, 230, 0.8) 0px, transparent 50%),
     radial-gradient(at 80% 0%, rgba(224, 231, 255, 0.8) 0px, transparent 50%),
     radial-gradient(at 0% 50%, rgba(254, 243, 199, 0.6) 0px, transparent 50%),

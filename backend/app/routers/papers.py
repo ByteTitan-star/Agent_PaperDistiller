@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.crypto import aes_decrypt
@@ -18,7 +18,7 @@ from ..config import get_settings
 from ..database import get_db
 from ..dependencies import broker, storage
 from ..models import ChatMessage, ChatSession, Paper, TaskRecord, User, UserApiConfig
-from ..schemas import ChatRequest, ChatResponse, ContentResponse, PaperMeta
+from ..schemas import ChatRequest, ContentResponse, PaperMeta
 from ..services.chat import chat_with_paper_stream
 from ..storage import domain_tag_from_template, unique_keep_order
 
@@ -57,9 +57,7 @@ class PaginatedPapers(BaseModel):
 
 async def _load_user_chat_settings(user: User, db: AsyncSession):
     """从数据库加载用户 API 配置，返回带用户 key 的 Settings 副本。"""
-    result = await db.execute(
-        select(UserApiConfig).where(UserApiConfig.user_id == user.id)
-    )
+    result = await db.execute(select(UserApiConfig).where(UserApiConfig.user_id == user.id))
     config = result.scalar_one_or_none()
 
     base_settings = get_settings()
@@ -110,9 +108,7 @@ def _paper_to_meta(paper: Paper, task_id: str | None = None) -> PaperMeta:
     )
 
 
-async def _get_user_paper(
-    paper_id: str, user: User, db: AsyncSession
-) -> Paper:
+async def _get_user_paper(paper_id: str, user: User, db: AsyncSession) -> Paper:
     result = await db.execute(select(Paper).where(Paper.paper_id == paper_id))
     paper = result.scalar_one_or_none()
     if not paper:
@@ -144,9 +140,7 @@ async def list_papers(
 
     # 分页数据
     offset = (page - 1) * page_size
-    result = await db.execute(
-        base_query.order_by(Paper.created_at.desc()).offset(offset).limit(page_size)
-    )
+    result = await db.execute(base_query.order_by(Paper.created_at.desc()).offset(offset).limit(page_size))
     papers = result.scalars().all()
 
     # 查询这些论文中仍在处理的任务
@@ -187,10 +181,12 @@ async def get_paper(
     paper = await _get_user_paper(paper_id, user, db)
     active_statuses = ["queued", "parsing", "translating", "summarizing", "critiquing"]
     task_q = await db.execute(
-        select(TaskRecord.task_id).where(
+        select(TaskRecord.task_id)
+        .where(
             TaskRecord.paper_id == paper_id,
             TaskRecord.status.in_(active_statuses),
-        ).limit(1)
+        )
+        .limit(1)
     )
     task_id_row = task_q.scalar_one_or_none()
     return _paper_to_meta(paper, task_id=task_id_row)
@@ -234,7 +230,12 @@ async def get_pdf(
     # 本地文件优先（避免 OSS 重定向触发下载）
     pdf_path = storage.pdf_path(paper_id)
     if pdf_path.exists():
-        logger.info("[PDF] ✅ 本地文件服务 | paper_id=%s | 路径=%s | 大小=%d bytes", paper_id, pdf_path, pdf_path.stat().st_size)
+        logger.info(
+            "[PDF] ✅ 本地文件服务 | paper_id=%s | 路径=%s | 大小=%d bytes",
+            paper_id,
+            pdf_path,
+            pdf_path.stat().st_size,
+        )
         return FileResponse(
             pdf_path,
             media_type="application/pdf",
@@ -296,7 +297,9 @@ async def get_translation_layout(
     )
 
 
-async def _get_or_create_session(db: AsyncSession, user_id: int, paper_id: str, session_id: str | None) -> tuple[ChatSession, list[dict[str, str]]]:
+async def _get_or_create_session(
+    db: AsyncSession, user_id: int, paper_id: str, session_id: str | None
+) -> tuple[ChatSession, list[dict[str, str]]]:
     """获取或创建会话，返回 (session, history_messages)。"""
     if session_id:
         result = await db.execute(
@@ -309,9 +312,7 @@ async def _get_or_create_session(db: AsyncSession, user_id: int, paper_id: str, 
         if session:
             # 加载历史消息
             msg_result = await db.execute(
-                select(ChatMessage)
-                .where(ChatMessage.session_id == session_id)
-                .order_by(ChatMessage.created_at)
+                select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at)
             )
             history = [{"role": m.role, "content": m.content} for m in msg_result.scalars()]
             return session, history
@@ -324,9 +325,16 @@ async def _get_or_create_session(db: AsyncSession, user_id: int, paper_id: str, 
     return session, []
 
 
-async def _save_message(db: AsyncSession, session_id: str, role: str, content: str,
-                        deep_search: bool = False, thinking_chain: list | None = None,
-                        contexts: list | None = None, token_usage: dict | None = None):
+async def _save_message(
+    db: AsyncSession,
+    session_id: str,
+    role: str,
+    content: str,
+    deep_search: bool = False,
+    thinking_chain: list | None = None,
+    contexts: list | None = None,
+    token_usage: dict | None = None,
+):
     """保存一条消息到数据库。"""
     msg = ChatMessage(
         session_id=session_id,
@@ -358,6 +366,7 @@ async def chat_stream(
     user_settings = await _load_user_chat_settings(user, db)
 
     session, history = await _get_or_create_session(db, user.id, paper_id, payload.session_id)
+    payload.session_id = session.session_id
     await _save_message(db, session.session_id, "user", payload.question, deep_search=payload.deep_search)
     await db.commit()
 
@@ -366,25 +375,21 @@ async def chat_stream(
 
     async def event_generator():
         async for event in chat_with_paper_stream(
-            paper_id, payload, storage,
+            paper_id,
+            payload,
+            storage,
             summary_template=paper.summary_template,
             settings=user_settings,
             user_id=user.id,
             history=history,
         ):
             # 从 SSE 事件中收集 answer 用于持久化
-            if "token" in event:
+            if "data: " in event:
                 try:
-                    data = json.loads(event.split("data: ")[1].strip())
+                    data = json.loads(event.split("data: ", 1)[1].strip())
                     if data.get("type") == "token":
                         collected_answer.append(data.get("text", ""))
-                except Exception:
-                    pass
-            elif "done" in event:
-                try:
-                    data = json.loads(event.split("data: ")[1].strip())
-                    if data.get("type") == "done":
-                        # 注入 session_id 到 done 事件
+                    elif data.get("type") == "done":
                         data["session_id"] = session.session_id
                         event = f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
                         if data.get("thinking_chain"):
@@ -397,10 +402,16 @@ async def chat_stream(
         answer_text = "".join(collected_answer)
         if answer_text:
             from ..database import async_session_factory
+
             async with async_session_factory() as save_db:
-                await _save_message(save_db, session.session_id, "assistant", answer_text,
-                                    deep_search=payload.deep_search,
-                                    thinking_chain=collected_thinking or None)
+                await _save_message(
+                    save_db,
+                    session.session_id,
+                    "assistant",
+                    answer_text,
+                    deep_search=payload.deep_search,
+                    thinking_chain=collected_thinking or None,
+                )
                 await save_db.commit()
 
     return StreamingResponse(
@@ -439,7 +450,7 @@ async def delete_paper(
     # 删除磁盘文件
     try:
         import shutil
-        from pathlib import Path
+
         output_dir = storage.paper_output_dir(paper_id)
         if output_dir.exists():
             shutil.rmtree(output_dir, ignore_errors=True)

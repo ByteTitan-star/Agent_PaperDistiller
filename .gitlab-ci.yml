@@ -1,0 +1,144 @@
+# GitLab CI for Agent PaperDistiller
+#
+# Adapted from biomap-agents/.gitlab-ci.yml — keeps the quality gate split
+# (static / tests / security / markdown) but drops Jenkins image build,
+# K8s runner tolerations, and release automation that are bioagent-specific.
+#
+# Requires: GitLab runner with Docker executor (default shared runners OK).
+
+default:
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+  interruptible: true
+
+variables:
+  UV_CACHE_DIR: "${CI_PROJECT_DIR}/.cache/uv"
+  UV_LINK_MODE: "copy"
+  FORCE_COLOR: "0"
+  UV_HTTP_TIMEOUT: "120"
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+stages:
+  - frontend
+  - quality
+  - build
+
+.uv_cache: &uv_cache
+  cache:
+    key:
+      files:
+        - uv.lock
+    paths:
+      - .cache/uv
+      - .venv
+
+.frontend_setup: &frontend_setup
+  - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+  - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  - apt-get install -y --no-install-recommends nodejs
+  - node --version && npm --version
+  - cd frontend && npm ci
+
+frontend_build:
+  stage: frontend
+  image: node:20-bookworm-slim
+  cache:
+    key:
+      files:
+        - frontend/package-lock.json
+    paths:
+      - frontend/node_modules/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+  script:
+    - cd frontend && npm ci && npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+    expire_in: 1 week
+
+quality_static:
+  stage: quality
+  <<: *uv_cache
+  script:
+    - uv --version
+    - uv sync --frozen --group dev
+    - uv run ruff format --check .
+    - uv run ruff check .
+    - uv run mypy --follow-imports=skip backend/app/agent backend/app/tools backend/app/sandbox tests
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+
+quality_tests:
+  stage: quality
+  <<: *uv_cache
+  script:
+    - uv sync --frozen --group dev
+    - uv run pytest --cov --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - coverage.xml
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+
+quality_security:
+  stage: quality
+  <<: *uv_cache
+  script:
+    - uv sync --frozen --group dev
+    - uv run bandit -q -ll -r backend/app -c pyproject.toml
+    - uv run python scripts/secret_scan.py --all-files
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+
+quality_markdown:
+  stage: quality
+  image: node:20-bookworm-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.md"
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+      changes:
+        - "**/*.md"
+    - when: never
+  script:
+    - cd "${CI_PROJECT_DIR:-.}"
+    - npx --yes markdownlint-cli2@0.17.2
+
+docker_build:
+  stage: build
+  image: docker:27-cli
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+  script:
+    - docker build -t "${CI_REGISTRY_IMAGE:-paper-distiller}:${CI_COMMIT_SHORT_SHA}" .
+    - |
+      if [ -n "${CI_REGISTRY:-}" ]; then
+        docker login -u "${CI_REGISTRY_USER}" -p "${CI_REGISTRY_PASSWORD}" "${CI_REGISTRY}"
+        docker push "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+      fi
+  needs:
+    - quality_static
+    - quality_tests
+    - quality_security

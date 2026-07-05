@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .._types import HarnessEvent
@@ -45,10 +45,10 @@ class HITLManager:
 
     def __init__(
         self,
-        event_bus: EventBus,                         # 事件总线
-        store: HITLStore | None = None,               # 持久化存储（默认内存）
-        checkpoints: list[str] | None = None,         # 需要审批的步骤名列表
-        poll_interval: float = 2.0,                   # 轮询间隔（已废弃）
+        event_bus: EventBus,  # 事件总线
+        store: HITLStore | None = None,  # 持久化存储（默认内存）
+        checkpoints: list[str] | None = None,  # 需要审批的步骤名列表
+        poll_interval: float = 2.0,  # 轮询间隔（已废弃）
     ) -> None:
         self.event_bus = event_bus
         self.store = store or HITLStore()
@@ -57,7 +57,7 @@ class HITLManager:
         self._waiters: dict[str, asyncio.Event] = {}  # hitl_id → asyncio.Event
 
         # 将步骤名列表转为 HITLCheckpoint 字典
-        for name in (checkpoints or []):
+        for name in checkpoints or []:
             self.checkpoints[name] = HITLCheckpoint(step_name=name)
 
     def has_checkpoint(self, step_name: str) -> bool:
@@ -91,7 +91,7 @@ class HITLManager:
             step_name=step_name,
             pipeline_state=dict(state),
             status="pending",
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         # 持久化保存
         self.store.save(hitl_state)
@@ -163,7 +163,7 @@ class HITLManager:
         hitl_state.status = decision.action
         hitl_state.feedback = decision.feedback
         hitl_state.edited_state = decision.edited_state
-        hitl_state.resolved_at = datetime.now(timezone.utc).isoformat()
+        hitl_state.resolved_at = datetime.now(UTC).isoformat()
         self.store.save(hitl_state)
 
         self.event_bus.emit(

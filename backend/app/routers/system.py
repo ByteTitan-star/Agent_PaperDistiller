@@ -7,6 +7,7 @@ from ..schemas import SystemInfoResponse
 router = APIRouter(tags=["system"])
 settings = get_settings()
 
+
 @router.get("/system/info", response_model=SystemInfoResponse)
 async def get_system_info() -> SystemInfoResponse:
     """获取系统信息（应用名、模型配置、版本号等）。
@@ -16,8 +17,7 @@ async def get_system_info() -> SystemInfoResponse:
     """
     use_deepseek = bool(settings.deepseek_api_key.strip())
     collaboration_mode = (
-        f"Multi-Agent Collaboration: "
-        f"{settings.generation_model_name} (Gen) + {settings.evaluation_model_name} (Eval)"
+        f"Multi-Agent Collaboration: {settings.generation_model_name} (Gen) + {settings.evaluation_model_name} (Eval)"
     )
     skill_registry = get_skill_registry()
     skill_status = skill_registry.status()
@@ -33,5 +33,9 @@ async def get_system_info() -> SystemInfoResponse:
         app_version=getattr(settings, "app_version", "V2.0"),
         app_update_date=getattr(settings, "app_update_date", "2026-05-24"),
         app_author=getattr(settings, "app_author", "ByteTitan-Star"),
-        app_changelog=getattr(settings, "app_changelog", "引入 Harness 框架、ReAct Deep Search、用户系统、MySQL 持久化"),
+        app_changelog=getattr(
+            settings,
+            "app_changelog",
+            "引入 Harness 框架、ReAct Deep Search、用户系统、MySQL 持久化",
+        ),
     )
