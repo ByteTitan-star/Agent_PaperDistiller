@@ -48,9 +48,23 @@ dev = [
     "ruff>=0.15.11",
     "types-PyYAML>=6.0.12",
 ]
+eval = [
+    "ragas>=0.2.15",
+    "langchain-huggingface>=0.1.0",
+    "langchain-community>=0.3.0",
+    "rapidfuzz>=3.0.0",
+]
 
 [tool.uv]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+# onnxruntime 1.27+ / torch 2.6+ 仅提供 macOS 14+ 的 arm64 wheel；本机为 macOS 13（Darwin 22），
+# 故向下钉到仍兼容 macOS 13 的版本（chromadb / sentence-transformers 传递依赖）。
+override-dependencies = [
+    "onnxruntime<1.22",
+    "torch<2.6",
+]
+
 
 [tool.setuptools.packages.find]
 where = ["backend"]
@@ -149,6 +163,7 @@ testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
 markers = [
     "integration: tests requiring external services",
+    "eval: RAGAS RAG evaluation tests (incur LLM API cost; opt-in via --run-eval)",
 ]
 
 [tool.coverage.run]

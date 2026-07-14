@@ -138,6 +138,23 @@ class Settings(BaseSettings):
     # Multi-agent collaboration default (supervisor | round_robin | tot)
     default_collaboration_mode: str = "tot"
 
+    # RAG 评估（RAGAS）配置。judge/合成用 DeepSeek（OpenAI 兼容端点），嵌入走本地 sentence-transformers。
+    # 空 eval_judge_* 时回落到 DEEPSEEK_* 配置。
+    eval_enabled: bool = True
+    eval_judge_api_key: str = ""  # 空 -> 复用 deepseek_api_key
+    eval_judge_base_url: str = ""  # 空 -> 复用 deepseek_base_url
+    eval_judge_model: str = "deepseek-chat"  # 评估/合成用的模型 id
+    eval_judge_temperature: float = 0.0
+    eval_judge_timeout_sec: float = 120.0  # 评估 LLM 单次调用超时（RAGAS 多轮调用，给宽松些）
+    eval_testset_size: int = 8  # 每套 RAG 合成的问题数
+    eval_paper_top_k: int = 4  # 论文正文 RAG 检索 top_k
+    eval_skill_top_k: int = 5  # Skill 检索 top_k
+    eval_skill_min_similarity: float = 0.4
+    eval_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"  # 合成器聚类用嵌入
+    eval_report_dir: str = "data/eval_reports"
+    eval_paper_id: str = "eval-paper"  # 评估用论文的 paper_id
+    eval_paper_path: str = ""  # 评估用 PDF 绝对路径
+
     # Database
     DATABASE_URL: str = "mysql+asyncmy://root:root223@localhost:3306/AgentPaperDistriller?charset=utf8mb4"
 
