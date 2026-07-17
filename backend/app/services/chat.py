@@ -23,177 +23,82 @@ def _estimate_tokens(text: str) -> int:
     return int(cn_chars * 1.5 + other_len * 0.4)
 
 
-def _bm25_score(
-    query_tokens: list[str],
-    doc_tokens: list[str],
-    doc_freqs: dict[str, int],
-    total_docs: int,
-    avg_doc_len: float,
-    k1: float = 1.5,
-    b: float = 0.75,
-) -> float:
-    """计算单篇文档的 BM25 分数。
+def _bm25_search(
+    question: str,
+    paper_id: str,
+    top_k: int,
+    storage,
+) -> list[str]:
+    """用该论文的 BM25 倒排索引检索（命中倒排表的文档才打分，O(命中数)）。
 
-    BM25 公式：score = Σ IDF(qi) × (tf(qi,D) × (k1+1)) / (tf(qi,D) + k1 × (1-b+b×|D|/avgdl))
-
-    Args:
-        query_tokens: 查询的 token 列表。
-        doc_tokens: 文档的 token 列表。
-        doc_freqs: 各 token 在整个语料库中出现的文档数 {token: count}。
-        total_docs: 语料库总文档数。
-        avg_doc_len: 语料库平均文档长度（token 数）。
-        k1: 词频饱和参数，控制 TF 的影响上限（默认 1.5）。
-        b: 长度归一化参数，0=不考虑长度，1=完全归一化（默认 0.75）。
-
-    Returns:
-        float: BM25 分数。
+    索引由 ``storage.get_bm25_index`` 懒建并缓存（论文重新入库时失效）。
+    无 chunks 或无命中词时返回空列表。
     """
-    import math
-
-    if not doc_tokens or not query_tokens:
-        return 0.0
-
-    doc_len = len(doc_tokens)
-    # 统计文档中每个 token 的词频
-    tf_map: dict[str, int] = {}
-    for t in doc_tokens:
-        tf_map[t] = tf_map.get(t, 0) + 1
-
-    score = 0.0
-    for qt in query_tokens:
-        tf = tf_map.get(qt, 0)
-        if tf == 0:
-            continue
-        # IDF = ln((N - df + 0.5) / (df + 0.5) + 1)
-        df = doc_freqs.get(qt, 0)
-        idf = math.log((total_docs - df + 0.5) / (df + 0.5) + 1.0)
-        # TF 饱和项：(tf × (k1+1)) / (tf + k1 × (1 - b + b × doc_len/avgdl))
-        numerator = tf * (k1 + 1)
-        denominator = tf + k1 * (1 - b + b * doc_len / max(avg_doc_len, 1))
-        score += idf * numerator / denominator
-
-    return score
+    idx = storage.get_bm25_index(paper_id)
+    if idx is None:
+        return []
+    return idx.search(question, top_k)
 
 
 def retrieve_contexts_bm25(question: str, chunks: list[str], top_k: int) -> list[str]:
-    """使用 BM25 算法从论文切块中召回最相关的上下文。
+    """对给定 chunks 做 BM25 检索（兼容旧签名；内部走 rank_bm25 的 BM25Okapi）。
 
-    相比旧版 retrieve_contexts_lexical 的改进：
-    ✅ 词频（TF）：同一个词出现多次权重更高（不再是 0/1）
-    ✅ 逆文档频率（IDF）：稀有词权重更高，常见词权重降低
-    ✅ 长度归一化：长文档不会因为词多就得分更高
-    ✅ 饱和函数：词频不会无限增长，有上限
-    ✅ 可调参数：k1（词频饱和）、b（长度归一化）
-    ✅ 中文支持：字符二元组 bigram 分词
-
-    Args:
-        question: 用户问题。
-        chunks: 论文切块列表。
-        top_k: 返回最相关的 top_k 个切块。
-
-    Returns:
-        list[str]: 按相关性降序排列的切块列表。
+    注意：每次调用都重建一次索引，适合一次性/跨论文场景；单论文高频查询应改用
+    ``storage.get_bm25_index(paper_id)`` 拿缓存的索引。
     """
     if not chunks:
         return []
+    from .bm25_index import BM25Index
 
-    from .token_utils import tokenize_list
-
-    # 1. 对所有切块分词
-    query_tokens = tokenize_list(question)
-    if not query_tokens:
-        return chunks[:top_k]
-
-    doc_token_lists = [tokenize_list(chunk) for chunk in chunks]
-
-    # 2. 计算每个 token 在多少篇文档中出现过（DF）
-    doc_freqs: dict[str, int] = {}
-    for doc_tokens in doc_token_lists:
-        seen = set(doc_tokens)
-        for t in seen:
-            doc_freqs[t] = doc_freqs.get(t, 0) + 1
-
-    # 3. 计算平均文档长度
-    total_docs = len(chunks)
-    total_tokens = sum(len(dt) for dt in doc_token_lists)
-    avg_doc_len = total_tokens / max(total_docs, 1)
-
-    # 4. 对每个切块计算 BM25 分数
-    scored: list[tuple[float, str]] = []
-    for chunk, doc_tokens in zip(chunks, doc_token_lists, strict=False):
-        score = _bm25_score(query_tokens, doc_tokens, doc_freqs, total_docs, avg_doc_len)
-        scored.append((score, chunk))
-
-    # 5. 按分数降序排列，取 top_k（分数 > 0 的才返回）
-    scored.sort(key=lambda x: x[0], reverse=True)
-    selected = [text for score, text in scored[:top_k] if score > 0]
-    if selected:
-        return selected
-    # 全部得分为 0 时，返回原始顺序的 top_k
-    return chunks[:top_k]
+    return BM25Index(chunks).search(question, top_k)
 
 
-# 旧版保留兼容（已被 retrieve_contexts_bm25 替代）
+# 旧版词法召回入口（已被 retrieve_contexts_bm25 替代）
 def retrieve_contexts_lexical(question: str, chunks: list[str], top_k: int) -> list[str]:
     """词法重叠召回（已弃用，内部重定向到 BM25）。"""
     return retrieve_contexts_bm25(question, chunks, top_k)
 
 
-def retrieve_contexts(question: str, paper_id: str, top_k: int, storage) -> list[str]:
-    """多路召回：向量检索 + BM25 词法召回，去重融合。
+def _rrf_fuse(ranked_lists: list[list[str]], top_k: int, rrf_k: int) -> list[str]:
+    """标准 RRF（Reciprocal Rank Fusion）融合多路召回结果。
 
-    召回策略：
-    1. 向量语义检索（ChromaDB），取 top_k 条
-    2. BM25 词法检索，取 top_k 条
-    3. 融合去重：向量结果优先（语义更准），BM25 补充（词汇精确匹配）
-    4. 如果向量检索失败，回退为纯 BM25
-
-    Args:
-        question: 用户问题。
-        paper_id: 论文 ID。
-        top_k: 每路召回的最大数量。
-        storage: 文件存储实例。
-
-    Returns:
-        list[str]: 融合后的上下文列表。
+    公式：score(doc) = Σ_i  1 / (rrf_k + rank_i(doc))   （rank_i 为该路中的 1-indexed 排名）
+    某路未命中的文档不贡献分数。rrf_k 越大，排名差异的影响越平缓（标准取 60）。
+    返回按 RRF 分数降序的 top_k 个 chunk 文本（去重）。
     """
-    # 向量语义检索
-    vector_contexts = storage.search_similar_chunks(paper_id=paper_id, question=question, top_k=top_k)
+    scores: dict[str, float] = {}
+    for lst in ranked_lists:
+        for rank, item in enumerate(lst, start=1):
+            scores[item] = scores.get(item, 0.0) + 1.0 / (rrf_k + rank)
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return [item for item, _ in ranked[:top_k]]
 
-    # BM25 词法检索
-    chunks = storage.load_chunks(paper_id)
-    bm25_contexts = retrieve_contexts_bm25(question, chunks, top_k) if chunks else []
 
-    if not vector_contexts and not bm25_contexts:
-        return []
+def retrieve_contexts(question: str, paper_id: str, top_k: int, storage) -> list[str]:
+    """混合检索：向量语义召回 + BM25 词法召回，用 **标准 RRF** 融合后取 top_k。
 
-    # 向量检索失败，纯 BM25 回退
-    if not vector_contexts:
-        return bm25_contexts
+    流程：
+    1. 两路并行召回，每路过采 ``rag_rrf_candidate_k`` 条（融合前留足候选）；
+       - 向量路：``storage.search_similar_chunks``（ChromaDB，按语义相似度降序）
+       - BM25 路：``_bm25_search``（rank_bm25 倒排索引，按词法相关度降序）
+    2. RRF 融合两路排名 → 统一排序；
+    3. 取 top_k 返回。
 
-    # BM25 失败（chunks 为空），纯向量结果
-    if not bm25_contexts:
-        return vector_contexts[:top_k]
+    RRF 的好处：两路都命中且排名靠前的文档得分最高；任一路空自动退化为该路结果
+    （等价于旧的"向量失败回退 BM25 / BM25 失败回退向量"逻辑，但更平滑）。
+    """
+    candidate_k = max(top_k, settings.rag_rrf_candidate_k)
 
-    # 多路融合：向量优先 + BM25 补充，去重
-    seen: set[int] = set()
-    merged: list[str] = []
+    # 1. 向量语义检索（ChromaDB）
+    vector_contexts = storage.search_similar_chunks(
+        paper_id=paper_id, question=question, top_k=candidate_k
+    )
 
-    # 向量结果优先（语义相似度更高）
-    for ctx in vector_contexts:
-        h = hash(ctx)
-        if h not in seen:
-            seen.add(h)
-            merged.append(ctx)
+    # 2. BM25 词法检索（倒排索引，命中词才打分）
+    bm25_contexts = _bm25_search(question, paper_id, candidate_k, storage)
 
-    # BM25 补充（捕获向量可能漏掉的精确词汇匹配）
-    for ctx in bm25_contexts:
-        h = hash(ctx)
-        if h not in seen:
-            seen.add(h)
-            merged.append(ctx)
-
-    return merged[:top_k]
+    # 3. RRF 融合（两路都空时自然返回空列表）
+    return _rrf_fuse([vector_contexts, bm25_contexts], top_k, settings.rag_rrf_k)
 
 
 def retrieve_global_contexts(
@@ -269,10 +174,11 @@ def retrieve_global_contexts(
         paper_ids_on_disk,
     )
     for pid in paper_ids_on_disk:
-        chunks = storage.load_chunks(pid)
-        if not chunks:
+        # 用 storage 缓存的 BM25 索引（首次建后复用，避免每篇论文每次查询都重建倒排表）
+        idx = storage.get_bm25_index(pid)
+        if idx is None:
             continue
-        bm25_hits = retrieve_contexts_bm25(question, chunks, bm25_top_k)
+        bm25_hits = idx.search(question, bm25_top_k)
         for hit in bm25_hits:
             all_bm25_chunks.append(
                 {

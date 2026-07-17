@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     vector_distance_metric: str = "cosine"
     rag_default_top_k: int = 4
     rag_fallback_to_lexical: bool = True
+    # RRF（Reciprocal Rank Fusion）混合检索参数：向量 + BM25 两路召回按排名融合
+    rag_rrf_k: int = 60  # RRF 公式里的常数（标准值 60，与 Elasticsearch 一致）
+    rag_rrf_candidate_k: int = 50  # 融合前每路过采数量，越大融合越充分、越慢
 
     # 跨论文检索（深度研究）
     global_retrieval_top_k: int = 50  # 初排：跨全库向量召回数量

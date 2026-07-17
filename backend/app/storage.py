@@ -526,6 +526,23 @@ class Storage:
             distance_metric=vector_distance_metric,
         )
 
+        # BM25 倒排索引缓存：{paper_id: BM25Index}。论文重新入库时由 save_chunks 失效。
+        self._bm25_cache: dict[str, Any] = {}
+
+    def get_bm25_index(self, paper_id: str):
+        """返回该论文的 BM25Index（首次调用时从 chunks 懒建并缓存；无 chunks 返回 None）。"""
+        cached = self._bm25_cache.get(paper_id)
+        if cached is not None:
+            return cached
+        chunks = self.load_chunks(paper_id)
+        if not chunks:
+            return None
+        from .services.bm25_index import BM25Index
+
+        idx = BM25Index(chunks)
+        self._bm25_cache[paper_id] = idx
+        return idx
+
     def _ensure_structure(self) -> None:
         """
         确保必要的目录和默认文件存在。
@@ -792,6 +809,9 @@ class Storage:
         except Exception:
             # 向量索引失败时不阻塞主流程，问答阶段自动回退词法检索。
             pass
+
+        # chunks 变更，失效 BM25 缓存（下次查询重建）
+        self._bm25_cache.pop(paper_id, None)
 
     def load_chunks(self, paper_id: str) -> list[str]:
         """加载文本块。本地优先，本地不存在时从 OSS 下载缓存后读取。"""

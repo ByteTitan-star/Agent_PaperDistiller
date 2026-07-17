@@ -80,6 +80,15 @@ class MockStorage:
     def load_chunks(self, paper_id: str) -> list[str]:
         return self.chunks.get(paper_id, [])
 
+    def get_bm25_index(self, paper_id: str):
+        """测试用：从内存 chunks 现建一个 BM25Index（无缓存，规模小无所谓）。"""
+        chunks = self.chunks.get(paper_id, [])
+        if not chunks:
+            return None
+        from app.services.bm25_index import BM25Index
+
+        return BM25Index(chunks)
+
     def write_result(self, paper_id: str, kind: str, content: str, template_name: str = "") -> None:
         self.results.setdefault(paper_id, {})[kind] = content
 
