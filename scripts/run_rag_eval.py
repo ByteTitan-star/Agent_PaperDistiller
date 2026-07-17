@@ -45,15 +45,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="RAGAS RAG 评估：论文正文 RAG + Skill 检索 RAG")
     parser.add_argument("--pdf", default=None, help="评估用 PDF 路径（默认读 .env.dev 的 EVAL_PAPER_PATH）")
     parser.add_argument("--paper-id", default=None, help="论文入库用的 paper_id（默认 EVAL_PAPER_ID）")
-    parser.add_argument("--testset-size", type=int, default=None, help="每套 RAG 合成的问题数")
+    parser.add_argument("--testset-size", type=int, default=None, help="每套 RAG 合成的问题数（越大越慢越贵）")
     parser.add_argument("--judge-model", default=None, help="覆盖 judge/合成模型 id")
     parser.add_argument("--report-dir", default=None, help="报告输出目录")
     args = parser.parse_args()
 
+    # 延迟到 sys.path/env 都就绪后再 import，确保 config 能读到 backend/.env.dev
     from app.config import get_settings
     from app.evaluation import run_rag_evaluation
 
     settings = get_settings()
+    # 命令行参数覆盖 .env 配置（命令行优先级更高）
     if args.pdf:
         settings.eval_paper_path = str(Path(args.pdf).resolve())
     if args.paper_id:
@@ -65,13 +67,15 @@ def main() -> int:
     if args.report_dir:
         settings.eval_report_dir = args.report_dir
 
+    # 跑端到端评估（入库 → 合成测试集 → 两套 RAG 评估 → 落盘报告）
     report = run_rag_evaluation(settings)
+    # 打印摘要到终端，方便快速看结果
     print("\n=== 评估完成 ===")
     print(f"报告：{report['_report_paths']['json']}")
     print(f"      {report['_report_paths']['markdown']}")
     print("\n指标摘要：")
-    pm = report["paper_rag"]["metrics"]
-    sm = report["skill_rag"]["metrics"]
+    pm = report["paper_rag"]["metrics"]   # 论文 RAG 指标
+    sm = report["skill_rag"]["metrics"]  # 技能检索指标
     print(f"  论文 RAG  : faithfulness={pm.get('faithfulness')} "
           f"answer_relevancy={pm.get('answer_relevancy')} "
           f"context_precision={pm.get('context_precision')} "
