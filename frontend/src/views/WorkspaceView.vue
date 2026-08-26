@@ -114,6 +114,100 @@
                   </el-collapse>
                 </div>
 
+                <!-- HITL 人工审批面板 -->
+                <div v-if="hitlApproval && item._streaming === false && item._isResearch" class="hitl-panel">
+                  <div class="hitl-header">
+                    <span class="hitl-icon">📋</span>
+                    <span class="hitl-title">{{ hitlApproval.title }}</span>
+                  </div>
+                  <div class="hitl-message">{{ hitlApproval.message }}</div>
+
+                  <!-- 研究计划展示（Checkpoint 1: pre_search） -->
+                  <div v-if="hitlApproval.checkpoint === 'pre_search' && hitlApproval.current_state?.research_plan" class="hitl-plan">
+                    <!-- 需求理解 -->
+                    <div v-if="hitlApproval.current_state.research_plan.understanding?.length" class="hitl-plan-section">
+                      <div class="hitl-plan-label">🎯 我理解你的需求：</div>
+                      <ul class="hitl-plan-list">
+                        <li v-for="(u, ui) in hitlApproval.current_state.research_plan.understanding" :key="'u'+ui">{{ u }}</li>
+                      </ul>
+                    </div>
+                    <!-- 搜索计划 -->
+                    <div v-if="hitlApproval.current_state.research_plan.search_plan?.length" class="hitl-plan-section">
+                      <div class="hitl-plan-label">🔍 搜索计划：</div>
+                      <div v-for="(s, si) in hitlApproval.current_state.research_plan.search_plan" :key="'s'+si" class="hitl-search-step">
+                        <div class="hitl-step-top">
+                          <span class="hitl-step-num">{{ s.step || si + 1 }}</span>
+                          <span class="hitl-step-action">{{ s.action }}</span>
+                        </div>
+                        <span class="hitl-step-keywords">关键词：{{ s.keywords }}</span>
+                      </div>
+                    </div>
+                    <!-- 重点关注 -->
+                    <div v-if="hitlApproval.current_state.research_plan.focus_areas?.length" class="hitl-plan-section">
+                      <div class="hitl-plan-label">📌 重点关注：</div>
+                      <div class="hitl-plan-tags">
+                        <el-tag v-for="(f, fi) in hitlApproval.current_state.research_plan.focus_areas" :key="'f'+fi" size="small" type="info" effect="plain">{{ f }}</el-tag>
+                      </div>
+                    </div>
+                    <!-- 预估深度 -->
+                    <div v-if="hitlApproval.current_state.research_plan.estimated_depth" class="hitl-plan-section">
+                      <span class="hitl-plan-label">📊 预估深度：</span>
+                      <span class="hitl-depth-badge">{{ hitlApproval.current_state.research_plan.estimated_depth }}</span>
+                    </div>
+                    <!-- 用户可修改/补充 -->
+                    <div class="hitl-edit-area" style="margin-top: 10px;">
+                      <label class="hitl-label">补充搜索关键词或修改问题（可选）：</label>
+                      <textarea
+                        v-model="hitlEditQuestion"
+                        class="hitl-textarea"
+                        rows="2"
+                        placeholder="可补充额外要求或修改搜索方向..."
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Checkpoint 2: pre_report — 可追加搜索关键词 -->
+                  <div v-if="hitlApproval.checkpoint === 'pre_report'" class="hitl-edit-area">
+                    <div v-if="hitlApproval.current_state?.sources?.length" class="hitl-sources-preview">
+                      <span>✅ 搜索完成，已找到 {{ hitlApproval.current_state.sources.length }} 个来源</span>
+                    </div>
+                    <label class="hitl-label" style="margin-top: 8px;">追加搜索关键词（可选）：</label>
+                    <input
+                      v-model="hitlExtraKeywords"
+                      class="hitl-input"
+                      placeholder="留空则直接生成报告..."
+                    />
+                  </div>
+
+                  <!-- 操作按钮 -->
+                  <div class="hitl-actions">
+                    <el-button size="small" type="danger" @click="handleHitlDecision('rejected')">
+                      取消搜索
+                    </el-button>
+                    <el-button
+                      v-if="hitlApproval.checkpoint === 'pre_search'"
+                      size="small"
+                      type="warning"
+                      :disabled="!hitlEditQuestion.trim()"
+                      @click="handleHitlDecision('edited', { question: hitlApproval.current_state?.question, extra_keywords: hitlEditQuestion })"
+                    >
+                      补充并搜索
+                    </el-button>
+                    <el-button
+                      v-if="hitlApproval.checkpoint === 'pre_report'"
+                      size="small"
+                      type="warning"
+                      :disabled="!hitlExtraKeywords.trim()"
+                      @click="handleHitlDecision('edited', { extra_keywords: hitlExtraKeywords })"
+                    >
+                      追加搜索
+                    </el-button>
+                    <el-button size="small" type="primary" @click="handleHitlDecision('approved')">
+                      ✅ 确认继续
+                    </el-button>
+                  </div>
+                </div>
+
                 <!-- 工具使用提示 -->
                 <div v-if="item._toolHint && item._streaming" class="tool-hint">{{ item._toolHint }}</div>
 
@@ -187,7 +281,6 @@ import { ElMessage } from "element-plus";
 import MarkdownIt from "markdown-it";
 
 import {
-  askPaper,
   askPaperStream,
   getPaperContent,
   getPaperPdfDownloadUrl,
@@ -195,6 +288,7 @@ import {
   getTranslationLayoutUrl,
   listChatSessions,
   getChatMessages,
+  submitHitlDecision,
 } from "../api/client";
 import { usePaperStore } from "../stores/papers";
 import { useSystemStore } from "../stores/system";
@@ -224,6 +318,31 @@ const textareaRef = ref(null);
 const chatBoxRef = ref(null);
 const messages = ref([]);
 const sessionId = ref(null);
+
+// HITL（深度搜索人工审批）状态
+const hitlApproval = ref(null);     // { hitl_id, checkpoint, title, message, current_state }
+const hitlEditQuestion = ref("");   // pre_search: 修改后的搜索问题
+const hitlExtraKeywords = ref("");  // pre_report: 追加搜索关键词
+
+// HITL 决策提交
+const handleHitlDecision = async (action, editedState = null) => {
+  if (!hitlApproval.value) return;
+  const { hitl_id } = hitlApproval.value;
+  const msgIdx = messages.value.length - 1;
+  if (msgIdx >= 0) messages.value[msgIdx]._streaming = true;
+
+  try {
+    await submitHitlDecision(hitl_id, {
+      action,
+      feedback: null,
+      edited_state: editedState,
+    });
+    hitlApproval.value = null;
+  } catch (error) {
+    ElMessage.error("提交决策失败：" + (error?.response?.data?.detail || "未知错误"));
+    if (msgIdx >= 0) messages.value[msgIdx]._streaming = false;
+  }
+};
 
 // 加载最近一次会话的历史消息
 const loadChatHistory = async () => {
@@ -401,6 +520,14 @@ const sendQuestion = async () => {
           msg._streaming = false;
           if (event.thinking_chain) msg.thinking = event.thinking_chain;
           if (event.session_id) sessionId.value = event.session_id;
+          hitlApproval.value = null;
+          scrollToBottom();
+        } else if (event.type === "hitl_approval") {
+          // 深度搜索人工审批：暂停流式输出，展示审批面板
+          hitlApproval.value = event;
+          hitlEditQuestion.value = event.current_state?.question || "";
+          hitlExtraKeywords.value = "";
+          msg._streaming = false;
           scrollToBottom();
         } else if (event.type === "error") {
           msg.text = event.text;
@@ -997,5 +1124,152 @@ onBeforeUnmount(() => {
     min-height: 520px;
     height: auto;
   }
+}
+
+/* ====== HITL 人工审批面板 ====== */
+.hitl-panel {
+  margin: 10px 0;
+  padding: 14px;
+  border: 2px solid #f59e0b;
+  border-radius: 10px;
+  background: #fffbeb;
+}
+.hitl-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.hitl-icon {
+  font-size: 16px;
+}
+.hitl-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #92400e;
+}
+.hitl-message {
+  font-size: 13px;
+  color: #78716c;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+.hitl-edit-area {
+  margin-bottom: 10px;
+}
+.hitl-label {
+  display: block;
+  font-size: 12px;
+  color: #57534e;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.hitl-textarea,
+.hitl-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.hitl-textarea:focus,
+.hitl-input:focus {
+  border-color: #f59e0b;
+}
+.hitl-sources-preview {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.hitl-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+/* 研究计划展示 */
+.hitl-plan {
+  margin-bottom: 8px;
+}
+.hitl-plan-section {
+  margin-bottom: 8px;
+}
+.hitl-plan-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #44403c;
+  margin-bottom: 4px;
+}
+.hitl-plan-list {
+  margin: 2px 0 0 18px;
+  padding: 0;
+  font-size: 13px;
+  color: #57534e;
+  line-height: 1.6;
+}
+.hitl-plan-list li {
+  list-style-type: disc;
+}
+.hitl-search-step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0 6px 0;
+  font-size: 13px;
+  color: #57534e;
+  border-bottom: 1px dashed #e7e5e4;
+}
+.hitl-search-step:last-child {
+  border-bottom: none;
+}
+.hitl-step-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.hitl-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.hitl-step-action {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.5;
+}
+.hitl-step-keywords {
+  font-size: 12px;
+  color: #92400e;
+  background: #fef3c7;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-left: 26px;
+  word-break: break-all;
+}
+.hitl-plan-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.hitl-depth-badge {
+  font-size: 12px;
+  color: #1d4ed8;
+  background: #dbeafe;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 </style>

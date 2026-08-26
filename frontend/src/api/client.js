@@ -91,7 +91,6 @@ export const listPapers = (params) => client.get("/api/papers", { params });
 export const deletePaper = (paperId) => client.delete(`/api/papers/${paperId}`);
 export const getPaperById = (paperId) => client.get(`/api/papers/${paperId}`);
 export const getPaperContent = (paperId, kind) => client.get(`/api/papers/${paperId}/content/${kind}`);
-export const askPaper = (paperId, payload) => client.post(`/api/papers/${paperId}/chat`, payload);
 
 // Chat History API
 export const listChatSessions = (paperId) => client.get(`/api/papers/${paperId}/chat/sessions`);
@@ -145,6 +144,15 @@ export const askPaperStream = async (paperId, payload, onEvent) => {
     } catch {}
   }
 };
+// ---------------------------------------------------------------------------
+// HITL (Human-in-the-Loop) Deep Search Approval API
+// ---------------------------------------------------------------------------
+export const submitHitlDecision = (hitlId, payload) =>
+  client.post(`/api/hitl/${hitlId}/decide`, payload);
+
+export const getHitlState = (hitlId) =>
+  client.get(`/api/hitl/${hitlId}`);
+
 export const getPaperPdfUrl = (paperId) => {
   const token = localStorage.getItem("access_token");
   return `${API_BASE_URL}/api/papers/${paperId}/pdf?token=${token}`;
