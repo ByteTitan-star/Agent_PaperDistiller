@@ -33,12 +33,14 @@ def run(query: str, max_results: int = 3, search_depth: str = "basic") -> dict[s
 
         results = []
         for item in response.get("results", []):
-            results.append({
-                "title": item.get("title", ""),
-                "url": item.get("url", ""),
-                "content": item.get("content", "")[:500],
-                "score": item.get("score", 0),
-            })
+            results.append(
+                {
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "content": item.get("content", "")[:500],
+                    "score": item.get("score", 0),
+                }
+            )
 
         return {"results": results, "query": query, "result_count": len(results)}
     except ImportError:

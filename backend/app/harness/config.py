@@ -32,22 +32,22 @@ class HarnessSettings(_BaseSettings):
 
     # ---- 人机协同（Human-in-the-Loop）配置 ----
     hitl_checkpoints: list[str] = []  # 需要人工审批的步骤，如 ["critique"]
-    hitl_poll_interval: float = 2.0   # 等待人工决策的轮询间隔（秒）
+    hitl_poll_interval: float = 2.0  # 等待人工决策的轮询间隔（秒）
 
     # ---- Agent 重试配置 ----
-    agent_retry_count: int = 1        # 失败重试次数
-    agent_retry_delay: float = 1.0    # 重试间隔（秒）
+    agent_retry_count: int = 1  # 失败重试次数
+    agent_retry_delay: float = 1.0  # 重试间隔（秒）
 
     # ---- 多 Agent 协作配置 ----
-    default_collaboration_mode: str = "debate"  # debate / supervisor / round_robin
+    default_collaboration_mode: str = "tot"  # tot / supervisor / round_robin
 
     # ---- Tavily Web 搜索配置（ReAct 深度搜索使用） ----
-    tavily_api_key: str = ""                # API 密钥
-    tavily_search_depth: str = "basic"      # 搜索深度：basic / advanced
-    tavily_max_results: int = 3             # 单次最大结果数
+    tavily_api_key: str = ""  # API 密钥
+    tavily_search_depth: str = "basic"  # 搜索深度：basic / advanced
+    tavily_max_results: int = 3  # 单次最大结果数
 
     # ---- ReAct 深度搜索配置 ----
-    react_max_rounds: int = 5               # 最大推理-搜索轮次
+    react_max_rounds: int = 5  # 最大推理-搜索轮次
     react_enable_clarification: bool = True  # 是否启用问题澄清
 
 

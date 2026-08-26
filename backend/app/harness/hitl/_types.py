@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 
@@ -30,6 +30,7 @@ class HITLState:
         created_at: 创建时间（UTC ISO 格式）。
         resolved_at: 审批时间（UTC ISO 格式），未审批时为 None。
     """
+
     id: str
     step_name: str
     pipeline_state: dict[str, Any]
@@ -54,6 +55,7 @@ class HITLDecision:
         feedback: 人工反馈意见（可选）。
         edited_state: 人工修改后的流水线状态（仅 action="edited" 时使用）。
     """
+
     action: Literal["approved", "rejected", "edited"]
     feedback: str | None = None
     edited_state: dict[str, Any] | None = None
@@ -70,6 +72,7 @@ class HITLCheckpoint:
         description: 检查点描述（用于 UI 展示）。
         allow_edit: 是否允许人工修改状态后再批准，默认 True。
     """
+
     step_name: str
     description: str = ""
     allow_edit: bool = True

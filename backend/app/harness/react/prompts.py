@@ -18,9 +18,7 @@ CLARIFY_SYSTEM = (
 )
 
 CLARIFY_USER = (
-    "论文标题和上下文：\n{context}\n\n"
-    "用户问题：{question}\n\n"
-    "是否需要澄清？如果需要，请输出一个澄清问题；否则回复 NO。"
+    "论文标题和上下文：\n{context}\n\n用户问题：{question}\n\n是否需要澄清？如果需要，请输出一个澄清问题；否则回复 NO。"
 )
 
 # ---- 研究规划阶段的提示词（HITL Checkpoint 1 使用） ----
@@ -48,11 +46,7 @@ RESEARCH_PLAN_SYSTEM = (
     "- 只输出 JSON，不要输出任何解释或前言"
 )
 
-RESEARCH_PLAN_USER = (
-    "论文上下文：\n{context}\n\n"
-    "用户问题：{question}\n\n"
-    "请分析用户的真实研究需求，并制定搜索计划。"
-)
+RESEARCH_PLAN_USER = "论文上下文：\n{context}\n\n用户问题：{question}\n\n请分析用户的真实研究需求，并制定搜索计划。"
 
 # ---- LangGraph create_react_agent 专用系统提示词 ----
 # 包含论文上下文 {context_summary} 占位符

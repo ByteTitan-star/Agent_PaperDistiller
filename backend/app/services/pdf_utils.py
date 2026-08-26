@@ -1,6 +1,8 @@
 import io
 from pathlib import Path
+
 from pypdf import PdfReader
+
 
 def try_extract_title(file_bytes: bytes, filename: str) -> str:
     """尝试从 PDF 元数据提取标题，失败回退文件名。"""

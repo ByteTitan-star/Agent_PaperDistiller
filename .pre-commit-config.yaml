@@ -1,0 +1,76 @@
+# Pre-commit hooks for Agent PaperDistiller.
+#
+# Adapted from biomap-agents/.pre-commit-config.yaml (AGENTS.md §8).
+# Enrol both hook types once after `uv sync`:
+#
+#   uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
+#
+# Pytest coverage gate stays in CI (too slow for every commit).
+
+default_language_version:
+  python: python3.12
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.11
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: secret-scan
+        name: secret-scan
+        entry: bash -c 'ROOT="$(git rev-parse --show-toplevel)"; PROJ="$ROOT"; [ -f "$ROOT/Agent_PaperDistiller-main/pyproject.toml" ] && PROJ="$ROOT/Agent_PaperDistiller-main"; cd "$PROJ" && .venv/bin/python scripts/secret_scan.py --staged'
+        language: system
+        pass_filenames: false
+
+      - id: mypy
+        name: mypy
+        entry: bash -c 'ROOT="$(git rev-parse --show-toplevel)"; PROJ="$ROOT"; [ -f "$ROOT/Agent_PaperDistiller-main/pyproject.toml" ] && PROJ="$ROOT/Agent_PaperDistiller-main"; cd "$PROJ" && .venv/bin/mypy --follow-imports=skip backend/app/agent backend/app/tools backend/app/sandbox tests'
+        language: system
+        pass_filenames: false
+
+      - id: bandit
+        name: bandit
+        entry: bash -c 'ROOT="$(git rev-parse --show-toplevel)"; PROJ="$ROOT"; [ -f "$ROOT/Agent_PaperDistiller-main/pyproject.toml" ] && PROJ="$ROOT/Agent_PaperDistiller-main"; cd "$PROJ" && .venv/bin/bandit -q -ll -r backend/app -c pyproject.toml'
+        language: system
+        pass_filenames: false
+
+      - id: markdownlint-cli2
+        name: markdownlint-cli2
+        entry: bash -c 'ROOT="$(git rev-parse --show-toplevel)"; PROJ="$ROOT"; [ -f "$ROOT/Agent_PaperDistiller-main/pyproject.toml" ] && PROJ="$ROOT/Agent_PaperDistiller-main"; cd "$PROJ" && NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npx --yes markdownlint-cli2@0.17.2'
+        language: system
+        files: \.(md|markdown)$
+        pass_filenames: false
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.2.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - --strict
+          - feat
+          - fix
+          - refactor
+          - perf
+          - test
+          - docs
+          - build
+          - ci
+          - chore

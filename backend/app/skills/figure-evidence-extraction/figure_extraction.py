@@ -1,6 +1,5 @@
 from typing import Any
 
-
 FIGURE_MARKERS = ("figure", "fig.", "table", "图", "表")
 
 

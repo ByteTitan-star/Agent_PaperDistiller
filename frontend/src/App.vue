@@ -72,9 +72,9 @@ onMounted(() => { if (!systemStore.loaded) systemStore.fetchInfo(); });
 </script>
 
 <style scoped>
-.app-shell { 
-  min-height: 100vh; 
-  padding-top: 24px; 
+.app-shell {
+  min-height: 100vh;
+  padding-top: 24px;
   box-sizing: border-box; /* 新增这一行，确保 padding 包含在 100vh 内部 */
 }
 
@@ -90,7 +90,7 @@ onMounted(() => { if (!systemStore.loaded) systemStore.fetchInfo(); });
   align-items: center;
   justify-content: space-between;
   /* 覆盖默认的玻璃圆角，使之更像胶囊 */
-  border-radius: 100px; 
+  border-radius: 100px;
 }
 
 .brand-wrap {

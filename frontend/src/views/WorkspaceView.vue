@@ -78,16 +78,34 @@
             <p>也可以聊任何你想了解的话题。</p>
           </div>
 
-          <div v-for="(item, idx) in messages" :key="idx" :class="['message', item.role]">
+          <div v-for="(item, idx) in messages" :key="idx" :class="['message', item.role, { 'hitl-replay-row': item._hitlReplay }]">
             <!-- 头像 -->
             <div class="avatar">
               <span v-if="item.role === 'user'">你</span>
+              <span v-else-if="item.role === 'system'">审</span>
               <span v-else>AI</span>
             </div>
 
             <div class="bubble">
+              <!-- HITL 历史回放（system + contexts.hitl_part） -->
+              <div v-if="item._hitlReplay" class="hitl-replay-card">
+                <div class="hitl-replay-head">
+                  <span :class="['hitl-replay-badge', item._hitlReplay.kind]">
+                    {{ item._hitlReplay.kind === 'hitl_request' ? '审核请求' : '审核结果' }}
+                  </span>
+                  <span class="hitl-replay-checkpoint">{{ hitlCheckpointLabel(item._hitlReplay.hil_event_type) }}</span>
+                </div>
+                <p class="hitl-replay-title">{{ item.text }}</p>
+                <p v-if="item._hitlReplay.kind === 'hitl_response'" class="hitl-replay-action">
+                  {{ hitlResponseLabel(item._hitlReplay.response_option_id) }}
+                </p>
+                <p v-else-if="item._hitlReplay.payload?.message" class="hitl-replay-msg">
+                  {{ item._hitlReplay.payload.message }}
+                </p>
+              </div>
+
               <!-- ====== 深度研究模式 ====== -->
-              <template v-if="item._isResearch">
+              <template v-else-if="item._isResearch">
                 <!-- 研究阶段时间线 -->
                 <div class="research-timeline" v-if="item._phases?.length">
                   <div
@@ -114,102 +132,45 @@
                   </el-collapse>
                 </div>
 
-                <!-- HITL 人工审批面板 -->
-                <div v-if="hitlApproval && item._streaming === false && item._isResearch" class="hitl-panel">
-                  <div class="hitl-header">
-                    <span class="hitl-icon">📋</span>
-                    <span class="hitl-title">{{ hitlApproval.title }}</span>
-                  </div>
-                  <div class="hitl-message">{{ hitlApproval.message }}</div>
-
-                  <!-- 研究计划展示（Checkpoint 1: pre_search） -->
-                  <div v-if="hitlApproval.checkpoint === 'pre_search' && hitlApproval.current_state?.research_plan" class="hitl-plan">
-                    <!-- 需求理解 -->
-                    <div v-if="hitlApproval.current_state.research_plan.understanding?.length" class="hitl-plan-section">
-                      <div class="hitl-plan-label">🎯 我理解你的需求：</div>
-                      <ul class="hitl-plan-list">
-                        <li v-for="(u, ui) in hitlApproval.current_state.research_plan.understanding" :key="'u'+ui">{{ u }}</li>
-                      </ul>
-                    </div>
-                    <!-- 搜索计划 -->
-                    <div v-if="hitlApproval.current_state.research_plan.search_plan?.length" class="hitl-plan-section">
-                      <div class="hitl-plan-label">🔍 搜索计划：</div>
-                      <div v-for="(s, si) in hitlApproval.current_state.research_plan.search_plan" :key="'s'+si" class="hitl-search-step">
-                        <div class="hitl-step-top">
-                          <span class="hitl-step-num">{{ s.step || si + 1 }}</span>
-                          <span class="hitl-step-action">{{ s.action }}</span>
-                        </div>
-                        <span class="hitl-step-keywords">关键词：{{ s.keywords }}</span>
-                      </div>
-                    </div>
-                    <!-- 重点关注 -->
-                    <div v-if="hitlApproval.current_state.research_plan.focus_areas?.length" class="hitl-plan-section">
-                      <div class="hitl-plan-label">📌 重点关注：</div>
-                      <div class="hitl-plan-tags">
-                        <el-tag v-for="(f, fi) in hitlApproval.current_state.research_plan.focus_areas" :key="'f'+fi" size="small" type="info" effect="plain">{{ f }}</el-tag>
-                      </div>
-                    </div>
-                    <!-- 预估深度 -->
-                    <div v-if="hitlApproval.current_state.research_plan.estimated_depth" class="hitl-plan-section">
-                      <span class="hitl-plan-label">📊 预估深度：</span>
-                      <span class="hitl-depth-badge">{{ hitlApproval.current_state.research_plan.estimated_depth }}</span>
-                    </div>
-                    <!-- 用户可修改/补充 -->
-                    <div class="hitl-edit-area" style="margin-top: 10px;">
-                      <label class="hitl-label">补充搜索关键词或修改问题（可选）：</label>
-                      <textarea
-                        v-model="hitlEditQuestion"
-                        class="hitl-textarea"
-                        rows="2"
-                        placeholder="可补充额外要求或修改搜索方向..."
-                      />
-                    </div>
-                  </div>
-
-                  <!-- Checkpoint 2: pre_report — 可追加搜索关键词 -->
-                  <div v-if="hitlApproval.checkpoint === 'pre_report'" class="hitl-edit-area">
-                    <div v-if="hitlApproval.current_state?.sources?.length" class="hitl-sources-preview">
-                      <span>✅ 搜索完成，已找到 {{ hitlApproval.current_state.sources.length }} 个来源</span>
-                    </div>
-                    <label class="hitl-label" style="margin-top: 8px;">追加搜索关键词（可选）：</label>
-                    <input
-                      v-model="hitlExtraKeywords"
-                      class="hitl-input"
-                      placeholder="留空则直接生成报告..."
-                    />
-                  </div>
-
-                  <!-- 操作按钮 -->
-                  <div class="hitl-actions">
-                    <el-button size="small" type="danger" @click="handleHitlDecision('rejected')">
-                      取消搜索
-                    </el-button>
-                    <el-button
-                      v-if="hitlApproval.checkpoint === 'pre_search'"
-                      size="small"
-                      type="warning"
-                      :disabled="!hitlEditQuestion.trim()"
-                      @click="handleHitlDecision('edited', { question: hitlApproval.current_state?.question, extra_keywords: hitlEditQuestion })"
-                    >
-                      补充并搜索
-                    </el-button>
-                    <el-button
-                      v-if="hitlApproval.checkpoint === 'pre_report'"
-                      size="small"
-                      type="warning"
-                      :disabled="!hitlExtraKeywords.trim()"
-                      @click="handleHitlDecision('edited', { extra_keywords: hitlExtraKeywords })"
-                    >
-                      追加搜索
-                    </el-button>
-                    <el-button size="small" type="primary" @click="handleHitlDecision('approved')">
-                      ✅ 确认继续
-                    </el-button>
-                  </div>
-                </div>
-
                 <!-- 工具使用提示 -->
                 <div v-if="item._toolHint && item._streaming" class="tool-hint">{{ item._toolHint }}</div>
+
+                <!-- 边生成边审：pre_report 内联审批卡 -->
+                <div v-if="item._hitlInline" class="hitl-inline-card">
+                  <div class="hitl-inline-head">
+                    <span class="hitl-inline-badge">人工审核</span>
+                    <span class="hitl-inline-title">{{ item._hitlInline.title }}</span>
+                  </div>
+                  <p class="hitl-inline-msg">{{ item._hitlInline.message }}</p>
+                  <div v-if="item._sources?.length" class="hitl-inline-sources">
+                    已收录 {{ item._sources.length }} 个来源
+                  </div>
+                  <label class="hitl-label">追加搜索关键词（可选）</label>
+                  <el-input
+                    v-model="item._hitlInline.extraKeywords"
+                    size="small"
+                    placeholder="如需补充检索，输入关键词"
+                    :disabled="item._hitlInline.submitting"
+                  />
+                  <div class="hitl-inline-actions">
+                    <el-button
+                      size="small"
+                      :disabled="item._hitlInline.submitting"
+                      @click="submitHitlDecision('rejected', item._hitlInline, idx)"
+                    >取消</el-button>
+                    <el-button
+                      size="small"
+                      :disabled="item._hitlInline.submitting"
+                      @click="submitHitlDecision('edited', item._hitlInline, idx)"
+                    >追加搜索</el-button>
+                    <el-button
+                      size="small"
+                      type="primary"
+                      :loading="item._hitlInline.submitting"
+                      @click="submitHitlDecision('approved', item._hitlInline, idx)"
+                    >批准报告</el-button>
+                  </div>
+                </div>
 
                 <!-- 研究报告正文 -->
                 <div v-if="item.text" class="research-report">
@@ -267,10 +228,50 @@
               rows="1"
             ></textarea>
           </div>
-          <el-button type="primary" :loading="sending" @click="sendQuestion" :disabled="!question.trim()">发送</el-button>
+          <el-button type="primary" :loading="sending" @click="sendQuestion" :disabled="!question.trim() || hitlDialog.visible">发送</el-button>
         </div>
       </aside>
     </section>
+
+    <el-dialog
+      v-model="hitlDialog.visible"
+      :title="hitlDialog.title"
+      width="560px"
+      class="hitl-dialog"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="false"
+    >
+      <p class="hitl-message">{{ hitlDialog.message }}</p>
+
+      <template v-if="hitlDialog.checkpoint === 'pre_search'">
+        <label class="hitl-label">搜索问题</label>
+        <el-input v-model="hitlDialog.question" type="textarea" :rows="2" />
+        <label class="hitl-label">补充关键词（可选）</label>
+        <el-input v-model="hitlDialog.extraKeywords" placeholder="追加检索方向或约束" />
+        <div v-if="hitlDialog.researchPlan?.search_plan?.length" class="hitl-plan">
+          <div class="hitl-label">搜索计划</div>
+          <ul>
+            <li v-for="(step, i) in hitlDialog.researchPlan.search_plan" :key="i">
+              {{ step.action }} — {{ step.keywords }}
+            </li>
+          </ul>
+        </div>
+      </template>
+
+      <template #footer>
+        <el-button :disabled="hitlDialog.submitting" @click="submitHitlDecision('rejected', hitlDialog)">取消</el-button>
+        <el-button
+          :disabled="hitlDialog.submitting"
+          @click="submitHitlDecision('edited', hitlDialog)"
+        >修改后继续</el-button>
+        <el-button
+          type="primary"
+          :loading="hitlDialog.submitting"
+          @click="submitHitlDecision('approved', hitlDialog)"
+        >批准继续</el-button>
+      </template>
+    </el-dialog>
   </main>
 </template>
 
@@ -281,14 +282,15 @@ import { ElMessage } from "element-plus";
 import MarkdownIt from "markdown-it";
 
 import {
+  askPaper,
   askPaperStream,
+  decideHitl,
   getPaperContent,
   getPaperPdfDownloadUrl,
   getPaperPdfUrl,
   getTranslationLayoutUrl,
   listChatSessions,
   getChatMessages,
-  submitHitlDecision,
 } from "../api/client";
 import { usePaperStore } from "../stores/papers";
 import { useSystemStore } from "../stores/system";
@@ -319,28 +321,162 @@ const chatBoxRef = ref(null);
 const messages = ref([]);
 const sessionId = ref(null);
 
-// HITL（深度搜索人工审批）状态
-const hitlApproval = ref(null);     // { hitl_id, checkpoint, title, message, current_state }
-const hitlEditQuestion = ref("");   // pre_search: 修改后的搜索问题
-const hitlExtraKeywords = ref("");  // pre_report: 追加搜索关键词
+const hitlDialog = reactive({
+  visible: false,
+  hitlId: "",
+  checkpoint: "pre_search",
+  title: "",
+  message: "",
+  question: "",
+  extraKeywords: "",
+  researchPlan: null,
+  submitting: false,
+});
 
-// HITL 决策提交
-const handleHitlDecision = async (action, editedState = null) => {
-  if (!hitlApproval.value) return;
-  const { hitl_id } = hitlApproval.value;
-  const msgIdx = messages.value.length - 1;
-  if (msgIdx >= 0) messages.value[msgIdx]._streaming = true;
+const hitlCheckpointLabel = (hilEventType) => {
+  const map = {
+    deep_search_pre_search: "搜索前确认",
+    deep_search_pre_report: "报告生成审核",
+  };
+  return map[hilEventType] || String(hilEventType || "").replace("deep_search_", "") || "人工审核";
+};
 
+const hitlResponseLabel = (optionId) => {
+  const map = { approved: "已批准继续", rejected: "已取消", edited: "已修改后继续" };
+  return map[optionId] || optionId || "已处理";
+};
+
+const normalizeHitlEvent = (event) => ({
+  ...event,
+  hitl_id: event.hitl_id || event.hilId,
+  checkpoint: event.checkpoint || String(event.hil_event_type || "").replace("deep_search_", ""),
+  streaming: Boolean(event.streaming),
+  title: event.title || event.payload?.title || "需要确认",
+  message: event.message || event.payload?.message || "",
+  current_state: event.current_state || event.payload,
+});
+
+const openHitlDialog = (event, msg) => {
+  const e = normalizeHitlEvent(event);
+  if (e.streaming && e.checkpoint === "pre_report") {
+    msg._hitlInline = {
+      hitlId: e.hitl_id,
+      checkpoint: e.checkpoint,
+      title: e.title || "边生成边审",
+      message: e.message || "",
+      extraKeywords: "",
+      submitting: false,
+    };
+    return;
+  }
+  hitlDialog.visible = true;
+  hitlDialog.hitlId = e.hitl_id;
+  hitlDialog.checkpoint = e.checkpoint;
+  hitlDialog.title = e.title;
+  hitlDialog.message = e.message;
+  hitlDialog.question = e.current_state?.question || "";
+  hitlDialog.extraKeywords = "";
+  hitlDialog.researchPlan = e.current_state?.research_plan || null;
+  hitlDialog.submitting = false;
+};
+
+const appendSource = (msg, event) => {
+  const url = event.url || event.title;
+  if (!url) return;
+  if (!msg._sourceUrls) msg._sourceUrls = new Set();
+  if (msg._sourceUrls.has(url)) return;
+  msg._sourceUrls.add(url);
+  msg._sources.push(event);
+};
+
+const formatThinkingStep = (step) => {
+  if (typeof step === "string") return step;
+  if (!step || typeof step !== "object") return String(step ?? "");
+  if (step.type === "thinking") return step.content || step.text || "";
+  if (step.type === "tool_call") return `🔧 调用 ${step.name || "tool"}`;
+  if (step.type === "tool_result") return `📎 ${(step.content || "").slice(0, 120)}`;
+  return JSON.stringify(step);
+};
+
+const handleStreamEvent = (event, msg, assistantIdx) => {
+  if (event.type === "phase" || event.type === "stage") {
+    const phase = event.phase || event.stage;
+    const label = event.label || event.message || phase;
+    msg._phases.push({ phase, label, detail: event.detail || "" });
+    msg._currentPhase = phase;
+  } else if (event.type === "source") {
+    appendSource(msg, event);
+  } else if (event.type === "tool") {
+    msg._toolHint = `🔍 正在搜索：${event.query || event.name || "web"}`;
+  } else if (event.type === "thinking") {
+    if (!msg._thinkingSteps) msg._thinkingSteps = [];
+    msg._thinkingSteps.push(event.text || "");
+  } else if (event.type === "hitl_request" || event.type === "hitl_approval") {
+    openHitlDialog(event, msg);
+  } else if (event.type === "hitl_preview" && msg._hitlInline) {
+    msg._hitlInline.answerPreview = event.answer_preview || "";
+  } else if (event.type === "token") {
+    msg.text += event.text;
+  } else if (event.type === "done") {
+    msg.text = event.answer || msg.text;
+    msg._streaming = false;
+    msg._hitlInline = null;
+    msg._toolHint = "";
+    if (event.thinking_chain) {
+      msg.thinking = event.thinking_chain.map(formatThinkingStep);
+    } else if (msg._thinkingSteps?.length) {
+      msg.thinking = msg._thinkingSteps;
+    }
+    if (event.session_id) sessionId.value = event.session_id;
+  } else if (event.type === "error") {
+    msg.text = event.text;
+    msg._streaming = false;
+    msg._hitlInline = null;
+    ElMessage.error(event.text);
+  }
+  scrollToBottom();
+};
+
+const submitHitlDecision = async (action, target, msgIdx = null) => {
+  const hitlId = target.hitlId || target.hitl_id;
+  if (!hitlId || target.submitting) return;
+  target.submitting = true;
   try {
-    await submitHitlDecision(hitl_id, {
-      action,
-      feedback: null,
-      edited_state: editedState,
-    });
-    hitlApproval.value = null;
+    const payload = { action };
+    const extra = (target.extraKeywords || "").trim();
+    if (action === "edited") {
+      if (target.checkpoint === "pre_search") {
+        payload.edited_state = {
+          question: (target.question || "").trim(),
+          extra_keywords: extra,
+        };
+        if (!payload.edited_state.question && !extra) {
+          payload.action = "approved";
+        }
+      } else {
+        if (!extra) {
+          payload.action = "approved";
+        } else {
+          payload.edited_state = { extra_keywords: extra };
+        }
+      }
+    }
+    await decideHitl(hitlId, { ...payload, session_id: sessionId.value || undefined });
+    if (target === hitlDialog) {
+      hitlDialog.visible = false;
+    } else if (msgIdx != null) {
+      const msg = messages.value[msgIdx];
+      if (msg?._hitlInline) {
+        msg._hitlInline.resolved = true;
+        if (payload.action === "approved") {
+          msg._hitlInline = null;
+        }
+      }
+    }
   } catch (error) {
-    ElMessage.error("提交决策失败：" + (error?.response?.data?.detail || "未知错误"));
-    if (msgIdx >= 0) messages.value[msgIdx]._streaming = false;
+    ElMessage.error(error?.response?.data?.detail || "提交审批失败");
+  } finally {
+    target.submitting = false;
   }
 };
 
@@ -354,12 +490,24 @@ const loadChatHistory = async () => {
       sessionId.value = latest.session_id;
       const { data: historyMsgs } = await getChatMessages(latest.session_id);
       if (historyMsgs && historyMsgs.length > 0) {
-        messages.value = historyMsgs.map((m) => ({
-          role: m.role,
-          text: m.content,
-          thinking: m.thinking_chain,
-          _streaming: false,
-        }));
+        messages.value = historyMsgs
+          .filter((m) => m.role !== "system" || m.contexts?.hitl_part)
+          .map((m) => {
+            if (m.role === "system" && m.contexts?.hitl_part) {
+              return {
+                role: "system",
+                text: m.content,
+                _hitlReplay: m.contexts.hitl_part,
+                _streaming: false,
+              };
+            }
+            return {
+              role: m.role,
+              text: m.content,
+              thinking: m.thinking_chain,
+              _streaming: false,
+            };
+          });
       }
     }
   } catch {
@@ -486,10 +634,9 @@ const sendQuestion = async () => {
   const assistantIdx = messages.value.length;
 
   if (isDeep) {
-    // 深度研究：创建带时间线的研究消息
     messages.value.push({
       role: "assistant", text: "", _streaming: true, _isResearch: true,
-      _phases: [], _sources: [], _currentPhase: "",
+      _phases: [], _sources: [], _sourceUrls: new Set(), _currentPhase: "",
     });
   } else {
     messages.value.push({ role: "assistant", text: "", _streaming: true });
@@ -501,39 +648,7 @@ const sendQuestion = async () => {
       paperId.value,
       { question: text, top_k: 8, deep_search: isDeep, session_id: sessionId.value },
       (event) => {
-        const msg = messages.value[assistantIdx];
-        if (event.type === "phase") {
-          msg._phases.push({ phase: event.phase, label: event.label, detail: event.detail || "" });
-          msg._currentPhase = event.phase;
-          scrollToBottom();
-        } else if (event.type === "source") {
-          msg._sources.push(event);
-          scrollToBottom();
-        } else if (event.type === "tool") {
-          msg._toolHint = `🔍 正在搜索：${event.query || event.name}`;
-          scrollToBottom();
-        } else if (event.type === "token") {
-          msg.text += event.text;
-          scrollToBottom();
-        } else if (event.type === "done") {
-          msg.text = event.answer || msg.text;
-          msg._streaming = false;
-          if (event.thinking_chain) msg.thinking = event.thinking_chain;
-          if (event.session_id) sessionId.value = event.session_id;
-          hitlApproval.value = null;
-          scrollToBottom();
-        } else if (event.type === "hitl_approval") {
-          // 深度搜索人工审批：暂停流式输出，展示审批面板
-          hitlApproval.value = event;
-          hitlEditQuestion.value = event.current_state?.question || "";
-          hitlExtraKeywords.value = "";
-          msg._streaming = false;
-          scrollToBottom();
-        } else if (event.type === "error") {
-          msg.text = event.text;
-          msg._streaming = false;
-          ElMessage.error(event.text);
-        }
+        handleStreamEvent(event, messages.value[assistantIdx], assistantIdx);
       }
     );
   } catch (error) {
@@ -541,7 +656,6 @@ const sendQuestion = async () => {
     messages.value[assistantIdx]._streaming = false;
     ElMessage.error(error?.response?.data?.detail || "提问失败");
   } finally {
-    messages.value[assistantIdx]._streaming = false;
     sending.value = false;
     scrollToBottom();
   }
@@ -584,11 +698,11 @@ onBeforeUnmount(() => {
   gap: 14px;
   padding: 16px;
   box-sizing: border-box;
-  
+
   /* 原来是 height: calc(100dvh - var(--top-nav-height)); */
   /* 修改为精确减去外部干扰因素的高度（视你的导航栏实际高度可微调 130px~150px） */
-  height: calc(100dvh - 140px); 
-  
+  height: calc(100dvh - 140px);
+
   min-height: 0;
   overflow: hidden;
 }
@@ -1027,6 +1141,142 @@ onBeforeUnmount(() => {
   border-color: #6366f1;
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
 }
+
+.hitl-message {
+  margin: 0 0 12px;
+  color: #475569;
+  line-height: 1.5;
+}
+.hitl-label {
+  display: block;
+  margin: 10px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+.hitl-plan ul,
+.hitl-sources ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #475569;
+}
+.hitl-preview {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #64748b;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.hitl-inline-card {
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #eef2ff 0%, #f8fafc 100%);
+}
+.hitl-inline-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.hitl-inline-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4338ca;
+  background: #e0e7ff;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.hitl-inline-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.hitl-inline-msg {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.45;
+}
+.hitl-inline-sources {
+  font-size: 12px;
+  color: #6366f1;
+  margin-bottom: 8px;
+}
+.hitl-inline-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.hitl-replay-row {
+  opacity: 0.92;
+}
+
+.message.system .avatar {
+  background: #f59e0b;
+  font-size: 12px;
+}
+
+.message.system .bubble {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  max-width: 85%;
+}
+
+.hitl-replay-card {
+  font-size: 13px;
+}
+
+.hitl-replay-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.hitl-replay-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.hitl-replay-badge.hitl_request {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.hitl-replay-badge.hitl_response {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.hitl-replay-checkpoint {
+  color: #78716c;
+  font-size: 12px;
+}
+
+.hitl-replay-title {
+  margin: 0 0 4px;
+  font-weight: 500;
+  color: #44403c;
+}
+
+.hitl-replay-msg,
+.hitl-replay-action {
+  margin: 0;
+  color: #57534e;
+  font-size: 12px;
+}
+
 /* 用户气泡内的 Markdown（白色文字） */
 .message.user .bubble :deep(a) { color: #c7d2fe; }
 .message.user .bubble :deep(strong) { color: #fff; }
@@ -1124,152 +1374,5 @@ onBeforeUnmount(() => {
     min-height: 520px;
     height: auto;
   }
-}
-
-/* ====== HITL 人工审批面板 ====== */
-.hitl-panel {
-  margin: 10px 0;
-  padding: 14px;
-  border: 2px solid #f59e0b;
-  border-radius: 10px;
-  background: #fffbeb;
-}
-.hitl-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-.hitl-icon {
-  font-size: 16px;
-}
-.hitl-title {
-  font-weight: 600;
-  font-size: 14px;
-  color: #92400e;
-}
-.hitl-message {
-  font-size: 13px;
-  color: #78716c;
-  margin-bottom: 10px;
-  line-height: 1.5;
-}
-.hitl-edit-area {
-  margin-bottom: 10px;
-}
-.hitl-label {
-  display: block;
-  font-size: 12px;
-  color: #57534e;
-  margin-bottom: 4px;
-  font-weight: 500;
-}
-.hitl-textarea,
-.hitl-input {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: inherit;
-  box-sizing: border-box;
-  outline: none;
-  transition: border-color 0.2s;
-}
-.hitl-textarea:focus,
-.hitl-input:focus {
-  border-color: #f59e0b;
-}
-.hitl-sources-preview {
-  margin-top: 6px;
-  font-size: 12px;
-  color: #6b7280;
-}
-.hitl-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-/* 研究计划展示 */
-.hitl-plan {
-  margin-bottom: 8px;
-}
-.hitl-plan-section {
-  margin-bottom: 8px;
-}
-.hitl-plan-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #44403c;
-  margin-bottom: 4px;
-}
-.hitl-plan-list {
-  margin: 2px 0 0 18px;
-  padding: 0;
-  font-size: 13px;
-  color: #57534e;
-  line-height: 1.6;
-}
-.hitl-plan-list li {
-  list-style-type: disc;
-}
-.hitl-search-step {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 0 6px 0;
-  font-size: 13px;
-  color: #57534e;
-  border-bottom: 1px dashed #e7e5e4;
-}
-.hitl-search-step:last-child {
-  border-bottom: none;
-}
-.hitl-step-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-}
-.hitl-step-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #f59e0b;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  flex-shrink: 0;
-  line-height: 1;
-}
-.hitl-step-action {
-  flex: 1;
-  min-width: 0;
-  line-height: 1.5;
-}
-.hitl-step-keywords {
-  font-size: 12px;
-  color: #92400e;
-  background: #fef3c7;
-  padding: 2px 8px;
-  border-radius: 4px;
-  display: inline-block;
-  margin-left: 26px;
-  word-break: break-all;
-}
-.hitl-plan-tags {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-.hitl-depth-badge {
-  font-size: 12px;
-  color: #1d4ed8;
-  background: #dbeafe;
-  padding: 2px 8px;
-  border-radius: 4px;
 }
 </style>

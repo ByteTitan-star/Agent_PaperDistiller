@@ -14,12 +14,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..events import EventBus
 from ...harness.agents.base import BaseAgent
+from ..events import EventBus
 from .base import BaseCollaborationPattern
 from .round_robin import RoundRobinPattern
 from .supervisor import SupervisorPattern
-
 
 # 内置协作模式映射：模式名 → 模式类
 _BUILTIN_PATTERNS: dict[str, type[BaseCollaborationPattern]] = {
@@ -58,9 +57,9 @@ class CollaborationRegistry:
 
     def create(
         self,
-        mode: str,                    # 协作模式名称，如 "debate"
-        agents: list[BaseAgent],       # 参与 Agent 列表
-        **kwargs: Any,                 # 各模式的额外参数
+        mode: str,  # 协作模式名称，如 "debate"
+        agents: list[BaseAgent],  # 参与 Agent 列表
+        **kwargs: Any,  # 各模式的额外参数
     ) -> BaseCollaborationPattern:
         """创建或获取缓存的协作模式实例。
 
@@ -93,8 +92,8 @@ class CollaborationRegistry:
         # 按模式创建实例，各模式构造函数参数不同
         if mode == "supervisor":
             pattern = SupervisorPattern(
-                supervisor=agents[0],   # 监督者（第一个 Agent）
-                workers=agents[1:],     # 工人（其余 Agent）
+                supervisor=agents[0],  # 监督者（第一个 Agent）
+                workers=agents[1:],  # 工人（其余 Agent）
                 event_bus=self.event_bus,
                 merge_prompt_template=kwargs.get("merge_prompt_template"),  # 合并模板
             )
@@ -102,7 +101,7 @@ class CollaborationRegistry:
             pattern = RoundRobinPattern(
                 agents=agents,
                 event_bus=self.event_bus,
-                rounds=kwargs.get("rounds", 1),          # 轮询轮次
+                rounds=kwargs.get("rounds", 1),  # 轮询轮次
                 refinement_prompt=kwargs.get("refinement_prompt"),  # 改进模板
             )
         else:

@@ -6,9 +6,10 @@ import hashlib
 import importlib.util
 import inspect
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass
@@ -99,9 +100,8 @@ class SkillRegistry:
         # 关键词快速匹配
         q_lower = query.lower()
         for keywords, tool_name in self._KEYWORD_RULES:
-            if any(kw in q_lower for kw in keywords):
-                if tool_name in self._skills:
-                    return [self._skills[tool_name]]
+            if any(kw in q_lower for kw in keywords) and tool_name in self._skills:
+                return [self._skills[tool_name]]
 
         if not (self._semantic_ready and self._collection is not None and self._embedder is not None):
             return []
@@ -159,7 +159,9 @@ class SkillRegistry:
             lines.append(f"- {skill.tool_name}: {skill.description}")
         return "\n".join(lines)
 
-    def execute(self, tool_name: str, arguments: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, Any]:
+    def execute(
+        self, tool_name: str, arguments: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         skill = self._skills.get(tool_name)
         if not skill:
             return {"error": f"tool not registered: {tool_name}"}
@@ -170,8 +172,7 @@ class SkillRegistry:
             signature = inspect.signature(skill.callable_fn)
             kwargs: dict[str, Any] = {}
             accepts_var_kwargs = any(
-                parameter.kind == inspect.Parameter.VAR_KEYWORD
-                for parameter in signature.parameters.values()
+                parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()
             )
 
             for name, parameter in signature.parameters.items():
@@ -275,7 +276,7 @@ class SkillRegistry:
         if not module_path.exists():
             return None
 
-        module_hash = hashlib.sha1(str(module_path).encode("utf-8")).hexdigest()[:16]
+        module_hash = hashlib.sha1(str(module_path).encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
         module_name = f"agent_skill_{module_hash}"
         spec = importlib.util.spec_from_file_location(module_name, module_path)
         if spec is None or spec.loader is None:

@@ -207,9 +207,9 @@ onBeforeUnmount(() => {
 .home-page {
   display: grid;
   /* 左侧自适应，右侧固定为 420px（原来是 340px） */
-  grid-template-columns: minmax(0, 1fr) 420px; 
+  grid-template-columns: minmax(0, 1fr) 420px;
   /* 增加中间的留白间距，缓解拥挤感（原来是 32px） */
-  gap: 48px; 
+  gap: 48px;
   align-items: start;
 }
 

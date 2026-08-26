@@ -3,20 +3,25 @@
 这是整个多 Agent 系统的"总入口"和"装配中心"。
 它按依赖顺序创建并组装所有 harness 组件：
     Storage → TaskBroker → SkillRegistry → ToolRegistry →
-    AgentFactory → HITLManager → PipelineHarness → CollaborationRegistry
+    AgentFactory → HITLManager → CollaborationRegistry → PaperPipelineOrchestrator
 
 使用方式：
     harness = get_app_harness()   # 获取全局单例
     await harness.startup()       # 初始化所有组件
-    # ... 使用 harness.agent_factory / harness.pipeline_harness 等 ...
+    # ... 使用 harness.agent_factory / harness.pipeline_orchestrator 等 ...
     await harness.shutdown()      # 关闭清理
 """
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
-from typing import Any
 
+from ..agent.bootstrap import build_runtime
+from ..agent.worker import start_embedded_worker
+from ..agent_skills import SkillRegistry
+from ..pipeline.state_broker import TaskBroker
+from ..storage import Storage
 from ._types import HarnessEvent
 from .agents.factory import AgentFactory
 from .collaboration.registry import CollaborationRegistry
@@ -24,13 +29,9 @@ from .config import HarnessSettings
 from .events import EventBus
 from .hitl.base import HITLManager
 from .hitl.store import HITLStore
-from .pipeline.base import PipelineHarness
+from .pipeline.orchestrator import PaperPipelineOrchestrator
 from .tools.base import HarnessToolRegistry
 from .tools.rate_limiter import RateLimiter
-
-from ..agent_skills import SkillRegistry
-from ..pipeline.state_broker import TaskBroker
-from ..storage import Storage
 
 
 class AppHarness:
@@ -48,8 +49,10 @@ class AppHarness:
         tool_harness: 工具执行包装器（带事件追踪和限流）。
         agent_factory: Agent 工厂（按角色创建 Agent 实例）。
         hitl_manager: 人机协同管理器（流水线暂停/恢复）。
-        pipeline_harness: 流水线编排器（LangGraph / 线性两种模式）。
         collaboration_registry: 多 Agent 协作模式注册中心。
+        runtime: AgentLoop 运行时（ToolRegistry / Sandbox / StreamBus）。
+        pipeline_orchestrator: 论文流水线编排器（主路径）。
+        agent_worker: 嵌入式后台 worker（all-in-one 模式）。
     """
 
     def __init__(
@@ -71,8 +74,10 @@ class AppHarness:
         self.tool_harness: HarnessToolRegistry | None = None
         self.agent_factory: AgentFactory | None = None
         self.hitl_manager: HITLManager | None = None
-        self.pipeline_harness: PipelineHarness | None = None
         self.collaboration_registry: CollaborationRegistry | None = None
+        self.runtime = None
+        self.pipeline_orchestrator: PaperPipelineOrchestrator | None = None
+        self.agent_worker = None
 
     async def startup(self) -> None:
         """按依赖顺序初始化所有组件。
@@ -82,8 +87,8 @@ class AppHarness:
         2. 技能注册：SkillRegistry（加载 Agent 可用工具/技能）
         3. Harness 包装层：HarnessToolRegistry、AgentFactory
         4. 人机协同：HITLStore + HITLManager
-        5. 流水线：PipelineHarness（依赖 Storage、Broker、HITLManager）
-        6. 协作：CollaborationRegistry
+        5. 协作：CollaborationRegistry
+        6. Agent 运行时 + PaperPipelineOrchestrator
 
         重复调用是安全的（幂等），只会在首次调用时实际初始化。
         """
@@ -92,7 +97,7 @@ class AppHarness:
 
         # 计算项目路径
         backend_root = Path(__file__).resolve().parents[2]  # backend/ 目录
-        app_root = Path(__file__).resolve().parents[1]      # backend/app/ 目录
+        app_root = Path(__file__).resolve().parents[1]  # backend/app/ 目录
 
         # ── 1. 核心服务 ──
         # 优先复用外部注入的单例（dependencies.py 已构造，且 Storage 已挂载 OSS）；
@@ -144,17 +149,24 @@ class AppHarness:
             poll_interval=self.settings.hitl_poll_interval,
         )
 
-        # ── 5. 流水线编排器 ──
-        self.pipeline_harness = PipelineHarness(
+        # ── 5. 多 Agent 协作模式注册 ──
+        self.collaboration_registry = CollaborationRegistry(self.event_bus)
+
+        # ── 6. Agent 运行时（ReAct loop + ToolRegistry + Sandbox）──
+        self.runtime = build_runtime(
             storage=self.storage,
             broker=self.broker,
-            settings=self.settings,
-            event_bus=self.event_bus,
-            hitl_manager=self.hitl_manager,
+            skill_registry=self.skill_registry,
+            agent_factory=self.agent_factory,
+            collaboration_registry=self.collaboration_registry,
+            user_settings=self.settings,
         )
+        self.pipeline_orchestrator = PaperPipelineOrchestrator(self.runtime)
 
-        # ── 6. 多 Agent 协作模式注册 ──
-        self.collaboration_registry = CollaborationRegistry(self.event_bus)
+        # ── 7. 嵌入式 Agent Worker（api / all-in-one 模式）──
+        role = getattr(self.settings, "agent_service_role", "all-in-one")
+        if role in ("all-in-one", "api", "worker"):
+            self.agent_worker = await start_embedded_worker()
 
         self._initialized = True
         self.event_bus.emit(
@@ -170,13 +182,14 @@ class AppHarness:
         self.event_bus.emit(
             HarnessEvent(layer="app", component="AppHarness", action="stopping"),
         )
+        if self.agent_worker is not None:
+            await self.agent_worker.stop()
+            self.agent_worker = None
         # 关闭启动期 agent_factory 缓存的 agent 连接，避免 ResourceWarning
         if self.agent_factory is not None:
             for agent in getattr(self.agent_factory, "_agents", {}).values():
-                try:
+                with contextlib.suppress(Exception):
                     await agent.aclose()
-                except Exception:
-                    pass
         self._initialized = False
 
     @property

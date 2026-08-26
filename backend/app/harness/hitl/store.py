@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 from ._types import HITLState
 
@@ -105,16 +104,18 @@ class HITLStore:
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if data.get("status") == status:
-                    results.append(HITLState(
-                        id=data["id"],
-                        step_name=data["step_name"],
-                        pipeline_state=data.get("pipeline_state", {}),
-                        status=data.get("status", "pending"),
-                        feedback=data.get("feedback"),
-                        edited_state=data.get("edited_state"),
-                        created_at=data.get("created_at", ""),
-                        resolved_at=data.get("resolved_at"),
-                    ))
+                    results.append(
+                        HITLState(
+                            id=data["id"],
+                            step_name=data["step_name"],
+                            pipeline_state=data.get("pipeline_state", {}),
+                            status=data.get("status", "pending"),
+                            feedback=data.get("feedback"),
+                            edited_state=data.get("edited_state"),
+                            created_at=data.get("created_at", ""),
+                            resolved_at=data.get("resolved_at"),
+                        )
+                    )
             except Exception:
                 continue  # 静默跳过损坏的文件
         return results

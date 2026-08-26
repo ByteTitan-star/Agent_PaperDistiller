@@ -1,165 +1,182 @@
-# ⚗️ PaperDistiller: 异构多智能体定向学术论文蒸馏平台
+<div align="right">
 
-![PaperDistiller 首页界面](./UI_figures/HOME.png)
+**English** | [简体中文](./README_zh-CN.md)
 
-> **基于 DeepSeek-V3.2 与 Qwen3 的异构多智能体定向学术论文蒸馏平台**
+</div>
+
+# ⚗️ PaperDistiller: Multi-Agent Academic Paper Distillation Platform
+
+![PaperDistiller home screen](./UI_figures/HOME.png)
+
+> **A heterogeneous multi-agent platform for targeted academic paper distillation — powered by DeepSeek-V3.2 and Qwen3**
 >
-> 告别漫无目的的文献阅读。通过自定义“专属关注点（Skill）”，利用双顶级开源模型构建的异构多智能体流水线，将长篇顶会论文精准“蒸馏”为您需要的核心结构、代码逻辑与创新推演。
+> Stop reading papers aimlessly. Define your own extraction focus (Skills), then let a dual-model multi-agent pipeline distill long conference papers into the structure, code logic, and innovation insights you actually need.
 
-## 🌟 项目简介
-![PaperDistiller 首页界面](./UI_figures/OneTap.png)
-**PaperDistiller** 是一个基于 **Vue 3** (前端) 和 **FastAPI** (后端) 构建的全栈学术辅助工具。它不仅仅是一个 PDF 阅读器，更是一个高度定制化的**文献信息蒸馏引擎**。
+## 🌟 Overview
 
-本项目是一款专为学术论文设计的智能化处理系统，通过构建自动化流水线实现 PDF 解析、全文翻译、核心摘要提取及创新点生成。系统集成了多智能体协同（Multi-Agent Collaboration）机制，利用 DeepSeek-V3.2进行方案生成并由Qwen3 进行独立评审，配合 Tree of Thoughts (ToT) 策略，为科研人员提供深度论文解析与可执行的改进建议。
+![PaperDistiller workspace](./UI_figures/OneTap.png)
 
-只需上传 PDF 文件并指定提取模板（如：`template.md`），系统即可自动执行解析、翻译、结构化总结以及改进方案推演，并提供一个支持 RAG 问答的沉浸式双屏工作台。
+**PaperDistiller** is a full-stack research assistant built with **Vue 3** (frontend) and **FastAPI** (backend). It is more than a PDF viewer — it is a highly customizable **literature distillation engine**.
 
-## ✨ 核心特性
+The system automates PDF parsing, full-text translation, structured summarization, and innovation analysis. Multi-agent collaboration combines DeepSeek-V3.2 for generation with Qwen3 for independent review, using Tree of Thoughts (ToT) to deliver deep paper analysis and actionable improvement suggestions.
 
-- **🚀 全自动化“蒸馏”流水线 (Pipeline)**
-  - PDF 结构解析 $\rightarrow$ 全文对照翻译草稿 $\rightarrow$ 核心思路定向提取 $\rightarrow$ 创新改进建议生成。
-- **👁️ 沉浸式阅读工作台 (Workspace)**
-  - 左侧原生 PDF 渲染，右侧智能生成内容（Markdown 支持 LaTeX 公式）。
-  - 内置浮动式 RAG 问答助手 (Chat Panel)，随时针对当前文献进行局部提问。
-- **📊 实时任务监控 (SSE 机制)**
-  - 任务调度器 (`TaskBroker`) 结合 Server-Sent Events (SSE)，在前端实时展示从 0% 到 100% 的精确处理进度和状态反馈。
-- **🗂️ 本地化文献管理 (Dashboard)**
-  - 卡片式论文管理，支持按标题搜索、领域标签（如 "LLM", "CV", "Backdoor Attacks"）快速过滤筛选。
-- **🛠️ 高度可扩展的 Skill-Cards 设计**
-  - 支持热插拔的 Markdown/JSON 提取模板，你的“个人阅读习惯”即是 Agent 的提取指令。
+Upload a PDF, pick an extraction template (e.g. `template.md`), and the pipeline runs parse → translate → summarize → improve — all inside an immersive dual-pane workspace with RAG chat.
 
-## 🚀 快速开始
+## ✨ Key Features
 
-本项目默认使用确定性的本地模拟逻辑（Mock 流水线），无需配置外部 LLM API Key 即可完整跑通全流程进行测试。
+- **🚀 End-to-end distillation pipeline**
+  - PDF parsing → bilingual translation draft → focused extraction → innovation & improvement proposals
+- **👁️ Immersive workspace**
+  - Native PDF on the left; generated Markdown (with LaTeX) on the right
+  - Floating RAG chat panel for in-context Q&A
+- **📊 Live progress via SSE**
+  - `TaskBroker` + Server-Sent Events show 0–100% task progress in real time
+- **🗂️ Local paper library (Dashboard)**
+  - Card-based management with search and domain tags (e.g. LLM, CV, Backdoor Attacks)
+- **🛠️ Extensible Skill-Cards**
+  - Hot-swappable Markdown/JSON templates — your reading habits become agent instructions
 
-### 1. 启动后端服务 (FastAPI)
+## 🚀 Quick Start
 
-```
+The default mock pipeline runs end-to-end without external LLM API keys.
+
+### 1. Backend (FastAPI)
+
+```bash
 cd backend
-# 创建并激活虚拟环境
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 # Mac/Linux: source .venv/bin/activate
-
-# 安装依赖
 pip install -r requirements.txt
-
-# 启动服务
 python main.py
 ```
 
-> 后端服务默认运行在：`http://127.0.0.1:8000`
+> Backend: `http://127.0.0.1:8000`
 
-### 2. 启动前端服务 (Vue 3)
+### 2. Frontend (Vue 3)
 
-```
+```bash
 cd frontend
-
-# 安装依赖
 npm install
-
-# 启动开发服务器
 npm run dev
 ```
 
-> 前端服务默认运行在：`http://127.0.0.1:5173`
+> Frontend: `http://127.0.0.1:5173`
 
+### 3. Developer setup (optional)
 
-## 📋 更新日志
+```bash
+./scripts/setup_dev.sh   # uv sync + pre-commit hooks
+pre-commit run --all-files
+PYTHONPATH=backend pytest tests/unit -q
+```
 
-### v3.0（2026-06-28）
+## 📋 Changelog
 
-**Harness 工程全量改造 —— 让 harness 成为唯一执行脊柱**。本次重构修复了一个根本性架构缺陷：此前 `AppHarness.startup()` 从未被调用，导致整个 harness 层（agents / collaboration / tools / pipeline 适配器）在运行时**全部是死代码**，真实流量绕过它们直调 `pipeline/workflow_graph`。v3.0 让 harness 真正接管所有 LLM 调用与工具执行，并补齐 2026 主流 Agent harness 概念（MCP / OTel / 真流式 / 健壮性）。
+### v4.0 (2026-07-05)
 
-**Phase 0 · 地基：harness 可达 + 单例唯一**
-- `AppHarness.startup()/shutdown()` 接入 FastAPI lifespan（`harness_startup_enabled` 开关，默认开，失败不阻断启动）
-- 单例收敛到 `dependencies.py`（消除 `main.py` 与 `dependencies.py` 各建一套 Storage/Broker/SkillRegistry 的重复，顺带修复 `main.py` 那份 Storage 未挂载 OSS 的 bug）
-- 修复致命 HITL bug：`pipeline/base.py` 调用了不存在的 `hitl_manager.check()` → 改为正确的 `interrupt()` + `wait_for_decision()`
-- `worker.py` 现在真正走 `pipeline_harness.run()`（此前因 startup 未跑而永远回退 legacy）
+**Native Agent runtime + bioagent HITL alignment — from LangGraph bypass to production AgentLoop.** Built on the v3.0 harness foundation, v4.0 adds a standalone `agent/` runtime (Loop / Bootstrap / Worker / SubAgent), routes deep search and the paper pipeline through a unified orchestrator, aligns human-in-the-loop (HITL) with the bioagent protocol, and ships CI / pre-commit / 68 unit tests.
 
-**Phase 1 · 流水线 LLM 调用全部走 harness agent**
-- 删除 `tot_generator` / `llm_extractor` 内自建的 OpenAI client（与 harness agent 完全重复），改为统一委托 `DeepSeekAgent` / `ToTAgent`
-- 修复**致命的 per-task API Key bug**：此前启动时 agent 用占位符 key 构造、用户真实 key（存在 `user_settings`）到不了 agent → 改为每个任务用用户配置新建 `AgentFactory`，确保 agent 拿到正确 key
-- `renderer` 摘要/改进函数改为 async，`build_pipeline_graph` 注入 agent；删除死代码 `extract_backdoor_structured_info` / `extract_backdoor_indicators` / `extract_template_headings` / `_log_token_to_db_sync`
-- Token 记账收敛到 `BaseAgent.on_post_run` 单条路径（带 `user_id` / `action_type`），消除此前的双写/三写
+**Phase 0 · Native Agent runtime**
 
-**Phase 2 · 死代码裁决 + Supervisor 接入**
-- 删除 `harness/session/`（已被 SQLAlchemy `ChatSession`/`ChatMessage` ORM 取代）
-- 删除残桩 `DebatePattern`（丢弃评审、多轮无反馈环；该对抗协作已由 ToT 的 generate→evaluate→prune 完整覆盖）
-- `HarnessToolRegistry` 成为**唯一工具执行面**（chat + ReAct 统一走 `get_tool_executor()`，自动获得事件追踪/限流）
-- `SupervisorPattern` 接入深度搜索研究规划（`supervisor_planning_enabled` 开关，默认关；主管分解子问题 → worker 并行 → 合并）
-- `AgentFactory` 的 `SUPERVISOR` 角色显式映射，`TRANSLATOR`/`PARSER`（非 LLM 同步步骤）显式报错而非静默 fallback
+- New `backend/app/agent/`: `AgentLoop`, `RuntimeBundle`, `InMemoryStreamBus`, auto-discovering `ToolRegistry`
+- New `backend/app/tools/`: web_search, arxiv_search, spawn_sub_agent, wait_sub_agents, pipeline_steps, execute_code, shell_command
+- New `backend/app/sandbox/` for isolated code-skill execution
+- Deep search in `services/agent_chat.py` uses native AgentLoop streaming SSE (replaces legacy LangGraph ReAct path)
 
-**Phase 3 · MCP（Model Context Protocol）对外 + 对内**
-- 新增 `harness/mcp/`：`server.py` 用 FastMCP 把技能（web_search / arxiv_search）标准化暴露为 MCP 工具；`client.py` 让 ReAct agent 可调用外部 MCP server
-- `_context` 依赖 / 安全敏感技能（figure_extraction / code_execution）标记 `local_only`，不对外暴露
-- 默认关闭（`mcp_enabled` / `mcp_inbound_enabled`），懒导入 `mcp` 包，未安装时优雅降级不影响启动
+**Phase 1 · Pipeline consolidation**
 
-**Phase 4 · OpenTelemetry 自托管可观测**
-- 选用 OTel（非 LangSmith）：自托管 exporter（Jaeger/Tempo/console）国内网络最稳
-- `FastAPIInstrumentor` 自动埋点 + 现有 `Tracer` 桥接到 OTel span（`otel_enabled` 开关，默认关）
+- `harness/pipeline/orchestrator.py` is the sole paper-distillation entry; `worker.py` only calls the orchestrator
+- Removed dead code: `pipeline/workflow_graph.py`, `harness/react/langgraph_agent.py`, legacy harness pipeline adapters
+- All business modules kept: document_parser, translator, tot_generator, renderer, etc.
 
-**Phase 5 · 真异步流式**
-- 普通 chat 路径 `call_deepseek_chat_stream` 由同步阻塞 `OpenAI` 改为 `AsyncOpenAI` 异步迭代，不再逐 token 阻塞事件循环（SSE 契约保持不变）
+**Phase 2 · P0 production fixes**
 
-**Phase 6 · 健壮性**
-- `BaseAgent` 接入 tenacity 瞬态错误重试（消费此前死掉的 `agent_retry_count`/`agent_retry_delay` 配置，仅重试限流/超时/连接错误）
-- `AppHarness.shutdown()` 真正关闭 agent 持有的 OpenAI 连接（新增 `BaseAgent.aclose()`）
-- `RateLimiter` 接入 `HarnessToolRegistry`（`tool_rate_limit_max_calls`，默认 0 不限流），并修正其"令牌桶"文档谎言（实为滑动窗口）
+- Per-user LLM config: no global runtime mutation; task-scoped `TurnConfig.user_settings`
+- Resilient `SubAgentStore` with graceful fallback; `AgentWorker` lifecycle and error isolation
+- `user_settings.py` centralizes API keys and model config
 
-> 注：MCP / OTel / tenacity 等新依赖已加入 `requirements.txt`，对应功能默认关闭，按需 `pip install` 后通过配置开启。所有改动通过 `py_compile` 与分阶段逻辑测试验证；流水线端到端请在真实环境（MySQL + API Key + 前端）联调确认。
+**Phase 3 · HITL bioagent protocol (P1)**
 
----
+- New `HitlCoordinator`: `HITL_REQUEST` / `HITL_RESPONSE` on StreamBus + `HitlWaiterRegistry`
+- SSE type `hitl_request` (with `biomap_hil` wrapper; legacy `hitl_approval` alias for compatibility)
+- `POST /hitl/{id}/decide` → store update + StreamBus response + persistence to `chat_messages.contexts.hitl_part`
+- Deep search checkpoints: `pre_search` (plan modal) + `pre_report` (inline review while tokens stream; `done` deferred until approval)
+- Frontend `WorkspaceView`: inline HITL card, history replay, `session_id` on decide
 
-### v2.0（2026-05-31）
+**Phase 4 · Engineering quality**
 
-本次版本更新引入了以下核心改动：
+- `.pre-commit-config.yaml` (ruff, mypy, bandit, secret-scan, markdownlint, conventional commits)
+- `.gitlab-ci.yml` + `pyproject.toml` (uv, `scripts/setup_dev.sh`)
+- Test suite: 68 unit tests (agent loop, HITL coordinator, deep search, tools, sandbox)
 
-**深度搜索重构**
-- 替换手写 ReActEngine 为 LangGraph `create_react_agent`，通过 LangChain 原生 Tool Calling 驱动多轮搜索
-- 来源链接在推理过程中动态推送（非末尾拼接），支持点击跳转
-- 答案流式输出 + 思考链可视化
-- 关键词快速匹配兜底层（天气/新闻/GitHub 等绕过语义匹配），解决纯英文嵌入模型对中文 query 的语义鸿沟
-- 相似度阈值从硬编码 0.8 降至可配置 0.4
-
-**对话历史持久化**
-- ChatSession / ChatMessage ORM 模型接入，支持会话创建、消息保存、历史加载
-- 上下文智能管理：短历史全保留，长历史自动压缩为摘要（最近 10 条完整 + 旧消息提取用户问题列表）
-- 深度搜索模式也能感知对话历史
-- 新增 Chat History API（列出会话 / 获取消息 / 删除会话）
-
-**Token 统计修复**
-- 彻底解决 `token_usage_logs` 表写入为 0 的问题
-- 删除 fire-and-forget 模式的 `_log_chat_tokens`，改为 async 上下文直接 `await log_token_to_db`
-- 流式路径加 `stream_options` + 文本估算兜底；深度搜索路径补充 token 记录
-
-**用户体验优化**
-- System prompt 注入当前日期，解决 LLM 不知道”今天”是哪天的问题
-- 管理员可见所有用户模版（`GET /api/templates` 权限修复）
-- 用户设置页新增”重置 API”按钮（二次确认 + 重新加载已保存配置）
-- 管理员面板 UI 优化：用户操作下拉菜单、系统配置卡片化分组、论文状态本地化、模板空字段占位
-
-**日志与可观测性**
-- 结构化日志输出到 `backend/logs/app.log`（RotatingFileHandler，5MB 轮转）
-- Chat 入口记录 user_id / paper_id / question；工具匹配记录 matched_skills
-
-**Docker 化部署**
-- 多阶段 Dockerfile（前端构建 + 后端运行 + 嵌入模型自动下载）
-- docker-compose.yml（MySQL + App 一键部署，健康检查）
+> Note: Pipeline `pre_critique` HITL (`harness HITLManager`) is not yet on `HitlCoordinator` (planned for v4.x). Verify end-to-end with MySQL + API keys.
 
 ---
 
-### v1.0（2026-05-24）
+### v3.0 (2026-06-28)
 
-- 初始版本：PDF 解析、全文翻译、摘要提取、创新点评审
-- LangGraph StateGraph 流水线编排
-- DeepSeek + Qwen3 异构多智能体 ToT 策略
-- ChromaDB + BM25 多路 RAG 检索
-- SSE 实时进度推送
-- 双栏 HTML 版式渲染
-- JWT + 邮箱验证码认证
+**Harness overhaul — harness as the single execution spine.** Fixed a critical flaw where `AppHarness.startup()` was never called, leaving the entire harness layer dead at runtime while traffic bypassed it via `pipeline/workflow_graph`. v3.0 wires harness into all LLM and tool execution and adds MCP, OTel, true async streaming, and resilience.
+
+**Phase 0 · Foundation**
+
+- `AppHarness.startup()/shutdown()` in FastAPI lifespan
+- Singleton consolidation in `dependencies.py`
+- HITL fix: `interrupt()` + `wait_for_decision()`
+- `worker.py` → `pipeline_orchestrator.run()`
+
+**Phase 1 · Pipeline LLM via harness agents**
+
+- Unified `DeepSeekAgent` / `ToTAgent` delegation
+- Per-task API key fix
+- Token logging via `BaseAgent.on_post_run`
+
+**Phase 2 · Dead code + Supervisor**
+
+- Removed `harness/session/`, `DebatePattern`
+- `HarnessToolRegistry` as sole tool execution surface
+- `SupervisorPattern` for deep-search planning (opt-in)
+
+**Phase 3 · MCP**
+
+- `harness/mcp/`: FastMCP server + ReAct client
+
+**Phase 4 · OpenTelemetry**
+
+- Self-hosted OTel (Jaeger / Tempo / console)
+
+**Phase 5 · True async streaming**
+
+- `AsyncOpenAI` token iteration without blocking the event loop
+
+**Phase 6 · Resilience**
+
+- tenacity retries, `BaseAgent.aclose()`, `RateLimiter` on tool registry
 
 ---
 
-*Developed with ❤️ by ByteTitan-star*
+### v2.0 (2026-05-31)
 
+**Deep search** · LangGraph ReAct · live source cards · streaming answers & thinking chain
+
+**Chat history** · ChatSession / ChatMessage · context compression
+
+**Token accounting** · fixed zero-write bug · stream token logging
+
+**UX** · current date in system prompt · admin templates · API reset in settings
+
+**Docker** · multi-stage Dockerfile + docker-compose (MySQL + health checks)
+
+---
+
+### v1.0 (2026-05-24)
+
+- Initial release: parse, translate, summarize, innovation review
+- LangGraph StateGraph pipeline
+- DeepSeek + Qwen3 heterogeneous ToT
+- ChromaDB + BM25 hybrid RAG
+- SSE progress · JWT + email verification
+
+---
+
+*Developed with ❤️ by [ByteTitan-star](https://github.com/ByteTitan-star)*

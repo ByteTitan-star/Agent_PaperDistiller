@@ -33,8 +33,8 @@ class RateLimiter:
 
     def __init__(
         self,
-        max_calls: int = 60,         # 时间窗口内最大调用次数
-        window_seconds: float = 60.0, # 时间窗口长度（秒）
+        max_calls: int = 60,  # 时间窗口内最大调用次数
+        window_seconds: float = 60.0,  # 时间窗口长度（秒）
     ) -> None:
         self.max_calls = max_calls
         self.window_seconds = window_seconds

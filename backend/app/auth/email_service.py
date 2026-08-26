@@ -2,7 +2,7 @@ import datetime as dt
 import random
 import string
 
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import EmailVerification, User
@@ -25,7 +25,7 @@ async def create_email_code(
         email=email,
         token=code,
         action=action,
-        expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=expire_minutes),
+        expires_at=dt.datetime.now(dt.UTC) + dt.timedelta(minutes=expire_minutes),
     )
     db.add(record)
     await db.flush()
@@ -39,14 +39,14 @@ async def check_email_code(
     action: str = "register",
 ) -> bool:
     """仅校验验证码是否正确，不消费（用于前端预校验）。"""
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     result = await db.execute(
         select(EmailVerification).where(
             and_(
                 EmailVerification.email == email,
                 EmailVerification.token == code,
                 EmailVerification.action == action,
-                EmailVerification.used == False,
+                not EmailVerification.used,
                 EmailVerification.expires_at > now,
             )
         )
@@ -60,14 +60,14 @@ async def verify_email_code(
     code: str,
     action: str = "register",
 ) -> bool:
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     result = await db.execute(
         select(EmailVerification).where(
             and_(
                 EmailVerification.email == email,
                 EmailVerification.token == code,
                 EmailVerification.action == action,
-                EmailVerification.used == False,
+                not EmailVerification.used,
                 EmailVerification.expires_at > now,
             )
         )
@@ -159,9 +159,7 @@ async def _send_html_email(to_email: str, subject: str, html_body: str, text_bod
             server.send_message(msg)
 
 
-async def send_template_deleted_email(
-    to_email: str, username: str | None, template_name: str
-) -> None:
+async def send_template_deleted_email(to_email: str, username: str | None, template_name: str) -> None:
     """模板被管理员删除后通知模板所有者。"""
     name = username or "用户"
     html = f"""

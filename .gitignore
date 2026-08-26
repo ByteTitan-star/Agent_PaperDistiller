@@ -39,3 +39,14 @@ Thumbs.db
 run_log.txt
 log.txt
 =0.3.0
+
+# uv / CI / coverage
+.venv/
+.cache/
+htmlcov/
+.coverage
+coverage.xml
+report.xml
+.ci-node/
+.ruff_cache/
+.mypy_cache/

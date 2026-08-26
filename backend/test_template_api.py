@@ -3,6 +3,7 @@
 验证: emoji 内容写入、created_at 加载、owner 关系。
 用法: cd backend && python test_template_api.py
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -11,9 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+
 from app.database import async_session_factory
 from app.models import Template
-
 
 EMOJI_CONTENT = """# Test with emoji
 
@@ -53,9 +54,7 @@ async def main():
         # 2. READ via query with selectinload
         print("\n=== TEST 2: Read via select query ===")
         result = await session.execute(
-            select(Template)
-            .options(selectinload(Template.owner))
-            .where(Template.id == t.id)
+            select(Template).options(selectinload(Template.owner)).where(Template.id == t.id)
         )
         t2 = result.scalar_one()
         assert t2.content == EMOJI_CONTENT, "content mismatch after read"
@@ -74,11 +73,9 @@ async def main():
         print("\n=== TEST 4: Delete template ===")
         await session.delete(t2)
         await session.flush()
-        result = await session.execute(
-            select(Template).where(Template.id == t.id)
-        )
+        result = await session.execute(select(Template).where(Template.id == t.id))
         assert result.scalar_one_or_none() is None, "template should be deleted"
-        print(f"  OK: template deleted")
+        print("  OK: template deleted")
 
         await session.commit()
 

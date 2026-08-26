@@ -116,7 +116,7 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="账号已被禁用")
 
-    user.last_login_at = dt.datetime.now(dt.timezone.utc)
+    user.last_login_at = dt.datetime.now(dt.UTC)
     await db.flush()
     await db.refresh(user)
 
@@ -284,10 +284,12 @@ async def delete_user(
 
     # 先发通知邮件，再删除
     from .email_service import send_account_deleted_email
+
     await send_account_deleted_email(target_email, target_name)
 
     # 手动级联删除关联数据（MySQL 外键无 CASCADE）
     from ..models import ChatSession, Paper, Template, UserApiConfig
+
     for model in [Paper, Template, ChatSession, UserApiConfig]:
         rows = await db.execute(select(model).where(model.user_id == user_id))
         for row in rows.scalars().all():

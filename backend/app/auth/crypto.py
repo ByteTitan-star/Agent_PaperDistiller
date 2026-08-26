@@ -23,8 +23,8 @@ def _derive_key() -> bytes:
 def aes_encrypt(plaintext: str) -> str:
     key = _derive_key()
     iv = os.urandom(16)
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     from cryptography.hazmat.primitives import padding as sym_padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
     padder = sym_padding.PKCS7(128).padder()
     padded = padder.update(plaintext.encode()) + padder.finalize()
@@ -38,8 +38,8 @@ def aes_decrypt(token: str) -> str:
     key = _derive_key()
     raw = base64.b64decode(token)
     iv, ct = raw[:16], raw[16:]
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     from cryptography.hazmat.primitives import padding as sym_padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
     cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
     decryptor = cipher.decryptor()

@@ -10,11 +10,9 @@
 
 from __future__ import annotations
 
-import asyncio
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
 
-from .._types import AgentResult, AgentRole, HarnessEvent, LifecyclePhase, TokenUsage
+from .._types import AgentResult, AgentRole, HarnessEvent
 from ..config import HarnessSettings
 from ..events import EventBus
 
@@ -45,9 +43,9 @@ class BaseAgent(ABC):
 
     def __init__(
         self,
-        name: str,          # Agent 名称标识
-        role: AgentRole,     # Agent 角色（枚举）
-        event_bus: EventBus, # 事件总线
+        name: str,  # Agent 名称标识
+        role: AgentRole,  # Agent 角色（枚举）
+        event_bus: EventBus,  # 事件总线
         settings: HarnessSettings,  # 框架配置
     ) -> None:
         self.name = name
@@ -89,16 +87,19 @@ class BaseAgent(ABC):
             # 阶段 4：后处理（集中记录 token 用量）
             self.on_post_run(result, **kwargs)
             self.event_bus.emit(
-                HarnessEvent(layer="agent", component=self.name, action="post_run",
-                            payload={"has_error": result.error is not None}),
+                HarnessEvent(
+                    layer="agent",
+                    component=self.name,
+                    action="post_run",
+                    payload={"has_error": result.error is not None},
+                ),
             )
             return result
         except Exception as exc:
             # 异常处理：调用错误钩子，返回包含错误信息的 AgentResult
             self.on_error(exc)
             self.event_bus.emit(
-                HarnessEvent(layer="agent", component=self.name, action="error",
-                            payload={"error": str(exc)}),
+                HarnessEvent(layer="agent", component=self.name, action="error", payload={"error": str(exc)}),
             )
             return AgentResult(error=str(exc))
 
@@ -128,6 +129,7 @@ class BaseAgent(ABC):
         """
         try:
             from openai import APIConnectionError, APITimeoutError, RateLimitError
+
             return (RateLimitError, APITimeoutError, APIConnectionError)
         except Exception:
             return ()
@@ -220,6 +222,7 @@ class BaseAgent(ABC):
             return
         try:
             from ...pipeline.common_utils import log_token_usage
+
             user_id = kwargs.get("user_id")
             action_type = kwargs.get("action_type", "agent")
             log_token_usage(

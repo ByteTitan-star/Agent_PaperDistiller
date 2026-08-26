@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...harness.agents.base import BaseAgent
 from .._types import AgentResult, CollaborationResult
 from ..events import EventBus
-from ...harness.agents.base import BaseAgent
 from .base import BaseCollaborationPattern
 
 
@@ -30,10 +30,10 @@ class SupervisorPattern(BaseCollaborationPattern):
 
     def __init__(
         self,
-        supervisor: BaseAgent,                     # 监督者 Agent
-        workers: list[BaseAgent],                   # 工人 Agent 列表
-        event_bus: EventBus,                        # 事件总线
-        merge_prompt_template: str | None = None,   # 自定义合并模板
+        supervisor: BaseAgent,  # 监督者 Agent
+        workers: list[BaseAgent],  # 工人 Agent 列表
+        event_bus: EventBus,  # 事件总线
+        merge_prompt_template: str | None = None,  # 自定义合并模板
     ) -> None:
         super().__init__(
             name="supervisor",
@@ -57,15 +57,13 @@ class SupervisorPattern(BaseCollaborationPattern):
         """
         self._emit("supervisor_start")
 
-        supervisor = self.agents[0]   # 监督者
-        workers = self.agents[1:]     # 工人们
+        supervisor = self.agents[0]  # 监督者
+        workers = self.agents[1:]  # 工人们
 
         trace: list[dict[str, Any]] = []
 
         # ── 阶段 1：监督者分解任务 ──
-        decompose_prompt = (
-            f"请将以下任务分解为 {len(workers)} 个子任务，每个子任务一行，不要编号：\n\n{input_text}"
-        )
+        decompose_prompt = f"请将以下任务分解为 {len(workers)} 个子任务，每个子任务一行，不要编号：\n\n{input_text}"
         decompose_result = await supervisor.execute(
             decompose_prompt,
             system_prompt="你是一个任务分解专家。将复杂任务拆分为独立的子任务。",
@@ -81,22 +79,28 @@ class SupervisorPattern(BaseCollaborationPattern):
             )
 
         # 按行分割子任务，截取到工人数量
-        sub_tasks = [
-            line.strip()
-            for line in str(decompose_result.content).splitlines()
-            if line.strip()
-        ][:len(workers)]
+        sub_tasks = [line.strip() for line in str(decompose_result.content).splitlines() if line.strip()][
+            : len(workers)
+        ]
 
         # ── 阶段 2：工人并行执行子任务 ──
         self._emit("workers_start", {"worker_count": len(sub_tasks)})
         sub_results: list[AgentResult] = []
 
         import asyncio
+
         tasks = []
         for idx, sub_task in enumerate(sub_tasks):
             worker = workers[idx % len(workers)]  # 轮流分配工人
             tasks.append(worker.execute(sub_task, **kwargs))
-            trace.append({"role": "worker", "phase": "execute", "agent": worker.name, "sub_task": sub_task[:100]})
+            trace.append(
+                {
+                    "role": "worker",
+                    "phase": "execute",
+                    "agent": worker.name,
+                    "sub_task": sub_task[:100],
+                }
+            )
 
         # 并行等待所有工人完成（异常会被捕获，不会中断其他工人）
         sub_results = await asyncio.gather(*tasks, return_exceptions=True)

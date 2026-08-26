@@ -65,3 +65,20 @@ image_context_window: int = 200            # 图片周边文本上下文字符�
 - 图片描述向量化复用现有 sentence-transformers，不引入额外的 CLIP 模型以控制部署成本
 
 ---
+
+## 2. 其他待完善功能
+
+### 2.1 TaskRecord 状态持久化
+- 当前 TaskRecord 仅在 upload 时创建初始记录，pipeline 执行过程中状态仅存于内存（TaskBroker）
+- 待改进：在 pipeline 各阶段切换时同步更新 TaskRecord 表，保证服务重启后状态不丢失
+
+### 2.2 翻译引擎可配置化
+- 当前硬编码使用 Google Translate 非官方 API
+- 待改进：支持选择翻译引擎（Google / DeepL / LLM 翻译），通过配置切换
+
+### 2.3 多模态聊天
+- 当前聊天仅支持文本问答
+- 待改进：支持在聊天中发送图片截图，结合视觉模型进行图文问答
+
+### 2.4 导出功能
+- 待改进：支持将翻译、摘要、创新建议导出为 PDF/Word 格式

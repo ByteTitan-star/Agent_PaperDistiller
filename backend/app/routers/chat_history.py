@@ -1,7 +1,7 @@
 """Chat history endpoints — 会话列表、消息历史、删除会话。"""
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.dependencies import get_current_user
@@ -49,13 +49,15 @@ async def list_chat_sessions(
         if last_preview:
             last_preview = last_preview[:80]
 
-        infos.append(ChatSessionInfo(
-            session_id=s.session_id,
-            paper_id=s.paper_id,
-            created_at=str(s.created_at),
-            message_count=count,
-            last_message_preview=last_preview,
-        ))
+        infos.append(
+            ChatSessionInfo(
+                session_id=s.session_id,
+                paper_id=s.paper_id,
+                created_at=str(s.created_at),
+                message_count=count,
+                last_message_preview=last_preview,
+            )
+        )
     return infos
 
 
@@ -82,15 +84,14 @@ async def get_chat_messages(
         raise HTTPException(status_code=404, detail="会话不存在")
 
     msg_result = await db.execute(
-        select(ChatMessage)
-        .where(ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.created_at)
+        select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at)
     )
     return [
         ChatMessageInfo(
             role=m.role,
             content=m.content,
             thinking_chain=m.thinking_chain if isinstance(m.thinking_chain, list) else None,
+            contexts=m.contexts if isinstance(m.contexts, dict) else None,
             deep_search=m.deep_search,
             created_at=str(m.created_at),
         )

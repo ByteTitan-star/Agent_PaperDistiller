@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
-from sqlalchemy import select, func, case
+from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.crypto import aes_decrypt, aes_encrypt
@@ -56,9 +56,7 @@ async def get_api_keys(
     前端页面：SettingsView（设置页）
     用户操作：进入设置页自动加载，回显已配置的 Key（掩码展示）
     """
-    result = await db.execute(
-        select(UserApiConfig).where(UserApiConfig.user_id == user.id)
-    )
+    result = await db.execute(select(UserApiConfig).where(UserApiConfig.user_id == user.id))
     config = result.scalar_one_or_none()
     if not config:
         return ApiKeysResponse()
@@ -91,17 +89,13 @@ async def update_api_keys(
     前端页面：SettingsView（设置页）
     用户操作：填写/修改 DeepSeek / Qwen / Tavily 的 API Key → 点击「保存配置」
     """
-    result = await db.execute(
-        select(UserApiConfig).where(UserApiConfig.user_id == user.id)
-    )
+    result = await db.execute(select(UserApiConfig).where(UserApiConfig.user_id == user.id))
     config = result.scalar_one_or_none()
     if not config:
         config = UserApiConfig(user_id=user.id)
         db.add(config)
         await db.flush()
-        result = await db.execute(
-            select(UserApiConfig).where(UserApiConfig.user_id == user.id)
-        )
+        result = await db.execute(select(UserApiConfig).where(UserApiConfig.user_id == user.id))
         config = result.scalar_one()
 
     def encrypt_if_set(val: str | None, current: str | None) -> str | None:
@@ -112,7 +106,9 @@ async def update_api_keys(
         return aes_encrypt(val)
 
     config.deepseek_api_key = encrypt_if_set(body.deepseek_api_key, config.deepseek_api_key)
-    config.deepseek_base_url = body.deepseek_base_url if body.deepseek_base_url is not None else config.deepseek_base_url
+    config.deepseek_base_url = (
+        body.deepseek_base_url if body.deepseek_base_url is not None else config.deepseek_base_url
+    )
     config.qwen_api_key = encrypt_if_set(body.qwen_api_key, config.qwen_api_key)
     config.qwen_base_url = body.qwen_base_url if body.qwen_base_url is not None else config.qwen_base_url
     config.tavily_api_key = encrypt_if_set(body.tavily_api_key, config.tavily_api_key)
@@ -149,25 +145,26 @@ async def update_system_settings(
     用户操作：修改系统参数（如默认模板等）→ 点击「保存系统配置」
     """
     for item in body.settings:
-        result = await db.execute(
-            select(SystemSetting).where(SystemSetting.setting_key == item.setting_key)
-        )
+        result = await db.execute(select(SystemSetting).where(SystemSetting.setting_key == item.setting_key))
         setting = result.scalar_one_or_none()
         if setting:
             setting.setting_value = item.setting_value
             if item.description:
                 setting.description = item.description
         else:
-            db.add(SystemSetting(
-                setting_key=item.setting_key,
-                setting_value=item.setting_value,
-                setting_type=item.setting_type,
-                description=item.description,
-            ))
+            db.add(
+                SystemSetting(
+                    setting_key=item.setting_key,
+                    setting_value=item.setting_value,
+                    setting_type=item.setting_type,
+                    description=item.description,
+                )
+            )
     await db.flush()
 
     # 热更新运行时配置
     from ..main import storage
+
     for item in body.settings:
         if item.setting_key == "default_template" and item.setting_value:
             storage.default_template = item.setting_value
@@ -188,11 +185,10 @@ async def admin_list_papers(
     前端页面：AdminView（管理员页）「论文管理」Tab
     用户操作：管理员点击「论文管理」Tab 自动加载
     """
-    from ..schemas import PaperMeta
-    from ..storage import domain_tag_from_template, unique_keep_order
 
     # Simple query for all papers
     from ..models import Paper
+
     result = await db.execute(select(Paper).order_by(Paper.created_at.desc()))
     papers = result.scalars().all()
     return [
@@ -311,19 +307,17 @@ async def token_stats_overview(
             "total": int(row.total_tokens or 0),
             "calls": int(row.total_calls or 0),
         },
-        "by_model": [
-            {"model": r.model_name, "tokens": int(r.tokens or 0)}
-            for r in model_result
-        ],
+        "by_model": [{"model": r.model_name, "tokens": int(r.tokens or 0)} for r in model_result],
         "by_date": [
-            {"period": str(r.period), "tokens": int(r.tokens or 0),
-             "prompt": int(r.prompt or 0), "completion": int(r.completion or 0)}
+            {
+                "period": str(r.period),
+                "tokens": int(r.tokens or 0),
+                "prompt": int(r.prompt or 0),
+                "completion": int(r.completion or 0),
+            }
             for r in trend_result
         ],
-        "by_action": [
-            {"action": r.action_type, "tokens": int(r.tokens or 0)}
-            for r in action_result
-        ],
+        "by_action": [{"action": r.action_type, "tokens": int(r.tokens or 0)} for r in action_result],
     }
 
 
@@ -339,7 +333,8 @@ async def token_stats_users(
     前端页面：AdminView（管理员页）「Token 用量」Tab 下方用户排行表格
     用户操作：管理员切换日期范围时刷新排行数据
     """
-    from ..models import TokenUsageLog, User as UserModel
+    from ..models import TokenUsageLog
+    from ..models import User as UserModel
 
     filters = []
     if start_date:

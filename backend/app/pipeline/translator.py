@@ -81,7 +81,6 @@ def translate_text_online(text: str, target_language: str, timeout: int = 20, ma
     )
     url = f"https://translate.googleapis.com/translate_a/single?{params}"
 
-    last_error = None
     for attempt in range(1, max_retries + 1):
         try:
             request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -98,18 +97,24 @@ def translate_text_online(text: str, target_language: str, timeout: int = 20, ma
             return translated or clean
 
         except (URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError) as e:
-            last_error = e
             if attempt < max_retries:
                 wait_sec = [1, 3, 5][attempt - 1]
                 logger.warning(
                     "[翻译] ⚠️ 第%d次请求失败（%s: %s），%d秒后重试... | 原文前50字：%s",
-                    attempt, type(e).__name__, str(e)[:80], wait_sec, clean[:50],
+                    attempt,
+                    type(e).__name__,
+                    str(e)[:80],
+                    wait_sec,
+                    clean[:50],
                 )
                 time.sleep(wait_sec)
             else:
                 logger.error(
                     "[翻译] ❌ 第%d次请求仍然失败（%s: %s），放弃重试，保留原文 | 原文前50字：%s",
-                    attempt, type(e).__name__, str(e)[:80], clean[:50],
+                    attempt,
+                    type(e).__name__,
+                    str(e)[:80],
+                    clean[:50],
                 )
 
     return clean
@@ -320,11 +325,11 @@ def translate_chunks(chunks: list[str], target_language: str) -> tuple[list[str]
 
 
 __all__ = [
+    "flatten_sections_to_chunks",
     "normalize_language_code",
-    "translate_text_online",
     "split_for_translation",
+    "translate_chunks",
     "translate_long_text",
     "translate_sections",
-    "flatten_sections_to_chunks",
-    "translate_chunks",
+    "translate_text_online",
 ]
