@@ -8,7 +8,16 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field
 
 ResultKind = Literal["translation", "summary", "improvement"]
-TaskStatus = Literal["queued", "parsing", "translating", "summarizing", "critiquing", "done", "failed"]
+TaskStatus = Literal[
+    "queued",
+    "parsing",
+    "translating",
+    "summarizing",
+    "critiquing",
+    "done",
+    "failed",
+    "cancelled",
+]
 
 
 class UploadResponse(BaseModel):
