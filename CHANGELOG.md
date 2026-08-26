@@ -2,7 +2,7 @@
 
 All notable releases of Agent Paper Distiller.
 
-## v4.0 — 2026-07-05
+## v4.0.0 — 2026-07-05
 
 **Native Agent runtime + bioagent HITL alignment — from LangGraph bypass to production AgentLoop.**
 
