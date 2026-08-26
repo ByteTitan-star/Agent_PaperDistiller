@@ -144,6 +144,7 @@ backend/app/
   routers/        # FastAPI HTTP API
 frontend/src/     # Vue 3 workspace & library UI
 tests/            # Unit / integration tests
+docs/             # Architecture notes, roadmaps, and analysis (see docs/README.md)
 UI_figures/       # Product screenshots
 ```
 
