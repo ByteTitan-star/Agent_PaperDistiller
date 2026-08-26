@@ -144,6 +144,7 @@ backend/app/
   routers/        # FastAPI HTTP API
 frontend/src/     # Vue 3 工作台与文献库
 tests/            # 单元 / 集成测试
+docs/             # 架构笔记、路线图与分析（见 docs/README.md）
 UI_figures/       # 产品截图
 ```
 

@@ -17,4 +17,5 @@ ignores:
   - "backend/app/templates/**"
   - "backend/app/skills/**"
   - "UI_figures/**"
-  - "TODO.md"
+  - "docs/todo-backlog.md"
+  - "docs/system-improvement-roadmap.md"

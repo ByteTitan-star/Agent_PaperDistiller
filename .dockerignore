@@ -21,7 +21,7 @@ backend/test_*.py
 backend/fix_charset.py
 frontend/node_modules/
 frontend/dist/
-TODO.md
+docs/
 run_log.txt
 log.txt
 =0.3.0
