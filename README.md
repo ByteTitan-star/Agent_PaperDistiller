@@ -1,6 +1,4 @@
-<p align="center">
-  <strong>⚗️ Agent Paper Distiller</strong>
-</p>
+<h1 align="center">⚗️ Agent Paper Distiller</h1>
 
 <p align="center">
   <a href="https://github.com/ByteTitan-star/Agent_PaperDistiller/releases/tag/v4.0.0"><img src="https://img.shields.io/badge/PaperDistiller-v4.0.0-6e40c9" alt="PaperDistiller v4.0.0" /></a>
