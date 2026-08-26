@@ -2,7 +2,7 @@
 
 Agent Paper Distiller 的版本演进记录。
 
-## v4.0 — 2026-07-05
+## v4.0.0 — 2026-07-05
 
 **原生 Agent 运行时 + bioagent HITL 对齐 —— 从 LangGraph 旁路走向生产级 AgentLoop。**
 

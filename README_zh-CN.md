@@ -1,7 +1,9 @@
 # Agent Paper Distiller
 
+**当前版本：[v4.0.0](https://github.com/ByteTitan-star/Agent_PaperDistiller/releases/tag/v4.0.0)**
+
 <p align="center">
-  <a href="https://github.com/ByteTitan-star/Agent_PaperDistiller/releases"><img src="https://img.shields.io/badge/PaperDistiller-v4.0-6e40c9" alt="PaperDistiller v4.0" /></a>
+  <a href="https://github.com/ByteTitan-star/Agent_PaperDistiller/releases/tag/v4.0.0"><img src="https://img.shields.io/badge/PaperDistiller-v4.0.0-6e40c9" alt="PaperDistiller v4.0.0" /></a>
   <img src="https://img.shields.io/badge/python-3.12-3776AB" alt="Python 3.12" />
   <img src="https://img.shields.io/badge/Vue-3-42b883" alt="Vue 3" />
   <img src="https://img.shields.io/badge/FastAPI-009688" alt="FastAPI" />
@@ -147,7 +149,7 @@ UI_figures/       # 产品截图
 
 ## 更新日志
 
-完整版本历史见 [CHANGELOG_zh-CN.md](./CHANGELOG_zh-CN.md)（`v1.0` → `v4.0`）。
+完整版本历史见 [CHANGELOG_zh-CN.md](./CHANGELOG_zh-CN.md)（`v1.0` → `v4.0.0`）。
 
 ## 许可证
 
