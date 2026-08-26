@@ -1,174 +1,154 @@
-<div align="right">
+# Agent Paper Distiller
 
-[English](./README.md) | **简体中文**
+<p align="center">
+  <a href="https://github.com/ByteTitan-star/Agent_PaperDistiller/releases"><img src="https://img.shields.io/badge/PaperDistiller-v4.0-6e40c9" alt="PaperDistiller v4.0" /></a>
+  <img src="https://img.shields.io/badge/python-3.12-3776AB" alt="Python 3.12" />
+  <img src="https://img.shields.io/badge/Vue-3-42b883" alt="Vue 3" />
+  <img src="https://img.shields.io/badge/FastAPI-009688" alt="FastAPI" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="./README.md"><img src="https://img.shields.io/badge/English-0A66C2" alt="English" /></a>
+  <img src="https://img.shields.io/badge/%E4%B8%AD%E6%96%87-555555" alt="Chinese" />
+</p>
 
-</div>
+<p align="center">
+  <img src="./UI_figures/HOME.png" alt="PaperDistiller 首页" width="90%" />
+</p>
 
-# ⚗️ PaperDistiller: 异构多智能体定向学术论文蒸馏平台
+> 把长篇学术 PDF 蒸馏成双语草稿、结构化摘要与创新改进建议 —
+> 原生多智能体运行时、模板化提取，以及人机协同（HITL）深度研究。
 
-![PaperDistiller 首页界面](./UI_figures/HOME.png)
+## 这是什么？
 
-> **基于 DeepSeek-V3.2 与 Qwen3 的异构多智能体定向学术论文蒸馏平台**
->
-> 告别漫无目的的文献阅读。通过自定义“专属关注点（Skill）”，利用双顶级开源模型构建的异构多智能体流水线，将长篇顶会论文精准“蒸馏”为您需要的核心结构、代码逻辑与创新推演。
+**Agent Paper Distiller** 是面向学术论文蒸馏的全栈研究工作台。
 
-## 🌟 项目简介
+上传 PDF、选择提取模板（Skill），系统自动执行：解析 → 翻译 → 摘要 → 改进推演。双栏工作区左侧保留原文 PDF，右侧展示生成 Markdown（支持 LaTeX）；RAG 问答与深度搜索支持实时来源推送，并在关键检查点引入人工确认。
 
-![PaperDistiller 首页界面](./UI_figures/OneTap.png)
+技术栈为 **Vue 3** + **FastAPI**，执行层基于生产级 **AgentLoop**（工具注册、沙箱、子 Agent）与论文流水线编排器。
 
-**PaperDistiller** 是一个基于 **Vue 3** (前端) 和 **FastAPI** (后端) 构建的全栈学术辅助工具。它不仅仅是一个 PDF 阅读器，更是一个高度定制化的**文献信息蒸馏引擎**。
+## 产品流程
 
-本项目是一款专为学术论文设计的智能化处理系统，通过构建自动化流水线实现 PDF 解析、全文翻译、核心摘要提取及创新点生成。系统集成了多智能体协同（Multi-Agent Collaboration）机制，利用 DeepSeek-V3.2 进行方案生成并由 Qwen3 进行独立评审，配合 Tree of Thoughts (ToT) 策略，为科研人员提供深度论文解析与可执行的改进建议。
+| 阶段 | 关键动作 | 阶段产出 |
+| --- | --- | --- |
+| 上传与配置 | 上传 PDF、选择领域模板、配置模型 / API | 蒸馏任务 |
+| 解析与翻译 | 抽取文本结构，生成双语阅读草稿 | 翻译 / 排版草稿 |
+| 摘要与改进 | 模板引导提取 + ToT 风格评审 / 改进 | 摘要 + 创新建议 |
+| 工作台审阅 | PDF 与 Markdown 对照阅读，管理文献库 | 可复用的论文资产 |
+| 问答与深搜 | RAG 问答或 HITL 深度研究（计划 / 报告确认） | 有依据的回答 + 来源 |
 
-只需上传 PDF 文件并指定提取模板（如：`template.md`），系统即可自动执行解析、翻译、结构化总结以及改进方案推演，并提供一个支持 RAG 问答的沉浸式双屏工作台。
+## 产品界面
 
-## ✨ 核心特性
+| 首页 / 文献库 | 双栏工作台 |
+| --- | --- |
+| <img src="./UI_figures/papers_center.png" alt="文献库" /> | <img src="./UI_figures/paper_analyse.png" alt="论文工作台" /> |
+| 浏览论文、标签与蒸馏状态。 | 左 PDF、右 Markdown + 对话。 |
 
-- **🚀 全自动化“蒸馏”流水线 (Pipeline)**
-  - PDF 结构解析 → 全文对照翻译草稿 → 核心思路定向提取 → 创新改进建议生成。
-- **👁️ 沉浸式阅读工作台 (Workspace)**
-  - 左侧原生 PDF 渲染，右侧智能生成内容（Markdown 支持 LaTeX 公式）。
-  - 内置浮动式 RAG 问答助手 (Chat Panel)，随时针对当前文献进行局部提问。
-- **📊 实时任务监控 (SSE 机制)**
-  - 任务调度器 (`TaskBroker`) 结合 Server-Sent Events (SSE)，在前端实时展示从 0% 到 100% 的精确处理进度和状态反馈。
-- **🗂️ 本地化文献管理 (Dashboard)**
-  - 卡片式论文管理，支持按标题搜索、领域标签（如 "LLM", "CV", "Backdoor Attacks"）快速过滤筛选。
-- **🛠️ 高度可扩展的 Skill-Cards 设计**
-  - 支持热插拔的 Markdown/JSON 提取模板，你的“个人阅读习惯”即是 Agent 的提取指令。
+| 一键蒸馏 | 设置 |
+| --- | --- |
+| <img src="./UI_figures/OneTap.png" alt="一键蒸馏" /> | <img src="./UI_figures/setting_api.png" alt="API 设置" /> |
+| 从上传启动端到端流水线。 | 配置供应商、密钥与协作模式。 |
 
-## 🚀 快速开始
+## 核心能力
 
-本项目默认使用确定性的本地模拟逻辑（Mock 流水线），无需配置外部 LLM API Key 即可完整跑通全流程进行测试。
+| 能力 | 说明 |
+| --- | --- |
+| 端到端蒸馏流水线 | PDF 解析 → 双语草稿 → 模板提取 → 创新 / 改进建议 |
+| 沉浸式工作台 | 原生 PDF + Markdown/LaTeX 双栏，浮动 RAG 对话 |
+| 原生 Agent 运行时 | `AgentLoop`、工具注册表、沙箱、子 Agent 编排 |
+| HITL 深度研究 | `pre_search` / `pre_report` 人工确认 + SSE 流式输出 |
+| 实时进度（SSE） | TaskBroker 推送流水线 0–100% 状态 |
+| Skill / 模板卡片 | 可热插拔的 Markdown/JSON 模板，即 Agent 提取指令 |
+| 文献库 | 卡片式管理，支持搜索与领域标签 |
+| 工程化交付 | uv + pre-commit + 单元测试 + Docker Compose |
 
-### 1. 启动后端服务 (FastAPI)
+## 技术栈
+
+| 层级 | 选型 |
+| --- | --- |
+| 前端 | Vue 3、Vite、Element Plus |
+| 后端 | FastAPI、SQLAlchemy（异步）、SSE |
+| Agent | Native AgentLoop、harness 编排器，可选 MCP / OTel |
+| 检索 | ChromaDB + 混合 RAG |
+| 模型 | DeepSeek / Qwen（及 OpenAI 兼容接口） |
+| 部署 | Docker 多阶段构建 + `docker-compose.yml` |
+
+## 快速开始
+
+### 环境要求
+
+- Python **3.12+**
+- Node.js **18+**
+- MySQL **8**（本地或 Docker Compose）
+- 可选：真实 LLM API Key（未配置时取决于当前流水线模式）
+
+### 1. 后端
 
 ```bash
 cd backend
 python -m venv .venv
 # Windows: .venv\Scripts\activate
-# Mac/Linux: source .venv/bin/activate
+# macOS / Linux: source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env.dev   # 填写数据库与 API Key
 python main.py
 ```
 
-> 后端服务默认运行在：`http://127.0.0.1:8000`
+> 前端默认 API 地址：`http://127.0.0.1:8001`
 
-### 2. 启动前端服务 (Vue 3)
+### 2. 前端
 
 ```bash
 cd frontend
 npm install
+echo "VITE_API_BASE_URL=http://127.0.0.1:8001" > .env
 npm run dev
 ```
 
-> 前端服务默认运行在：`http://127.0.0.1:5173`
+> 前端：`http://127.0.0.1:5173`
 
-## 📋 更新日志
+### 3. Docker Compose（可选）
 
-### v4.0（2026-07-05）
+```bash
+docker compose up --build
+```
 
-**原生 Agent 运行时 + bioagent HITL 对齐 —— 从 LangGraph 旁路走向生产级 AgentLoop**。v4.0 在 v3.0 harness 地基上，引入独立 `agent/` 运行时（Loop / Bootstrap / Worker / SubAgent），深度搜索与论文流水线统一走 orchestrator；同时按 bioagent 协议对齐人机协同（HITL），并补齐 CI / pre-commit / 68 项单元测试。
+### 4. 开发工具（可选）
 
-**Phase 0 · 原生 Agent 运行时**
+```bash
+./scripts/setup_dev.sh
+pre-commit run --all-files
+PYTHONPATH=backend pytest tests/unit -q
+```
 
-- 新增 `backend/app/agent/`：`AgentLoop`、`RuntimeBundle`、`InMemoryStreamBus`、`ToolRegistry` 自动发现
-- 新增 `backend/app/tools/` 生产工具面：web_search / arxiv_search / spawn_sub_agent / wait_sub_agents / pipeline_steps / execute_code / shell_command
-- 新增 `backend/app/sandbox/` 沙箱执行层，代码技能隔离运行
-- `services/agent_chat.py` 深度搜索改走 native AgentLoop 流式 SSE（替代 legacy LangGraph ReAct 旁路）
+## 配置说明
 
-**Phase 1 · 流水线编排收敛**
+| 项 | 说明 |
+| --- | --- |
+| `backend/.env.dev` / `.env.prod` | 由 `APP_ENV` 加载（见 `backend/main.py`） |
+| `backend/.env.example` | 密钥、Agent 运行时、沙箱等安全模板 |
+| `frontend/.env` | `VITE_API_BASE_URL` 指向后端 |
+| 协作模式 | 设置页可切换 ToT / Supervisor 等 |
+| HITL | 深度搜索检查点需要已登录会话 |
 
-- `harness/pipeline/orchestrator.py` 成为论文蒸馏唯一编排入口；`worker.py` 仅走 orchestrator
-- 删除死代码：`pipeline/workflow_graph.py`、`harness/react/langgraph_agent.py`、legacy harness pipeline 适配器残桩
-- 保留全部业务模块：document_parser / translator / tot_generator / renderer 等
+**请勿提交真实 `.env` 文件。** 示例文件可入库，本地密钥已由 `.gitignore` 忽略。
 
-**Phase 2 · P0 生产修复**
+## 仓库结构
 
-- 修复 per-user LLM 配置：移除全局 runtime 突变，任务级 `TurnConfig.user_settings` 注入
-- `SubAgentStore` 优雅降级 + 历史上下文 flag；`AgentWorker` 任务生命周期与异常隔离
-- `user_settings.py` 统一读取用户 API Key / 模型配置
+```text
+backend/app/
+  agent/          # 原生 AgentLoop 运行时
+  harness/        # 流水线编排、Agent、MCP / HITL
+  services/       # 对话、深度搜索、HITL 协调
+  tools/          # Web / arXiv / 沙箱 / 子 Agent 工具
+  routers/        # FastAPI HTTP API
+frontend/src/     # Vue 3 工作台与文献库
+tests/            # 单元 / 集成测试
+UI_figures/       # 产品截图
+```
 
-**Phase 3 · HITL bioagent 协议对齐（P1）**
+## 更新日志
 
-- 新增 `HitlCoordinator`：`HITL_REQUEST` / `HITL_RESPONSE` 经 StreamBus 广播 + `HitlWaiterRegistry` 唤醒
-- SSE 映射为 `hitl_request`（含 `biomap_hil` wrapper + legacy `hitl_approval` 兼容字段）
-- `POST /hitl/{id}/decide` → store 更新 + StreamBus 响应 + 持久化到 `chat_messages.contexts.hitl_part`
-- 深度搜索双检查点：`pre_search`（计划确认弹窗）+ `pre_report`（边生成边审，token 实时流式、done 延迟至审批后）
-- 前端 `WorkspaceView`：内联 HITL 卡片、历史回放、`session_id` 随决策提交
+完整版本历史见 [CHANGELOG_zh-CN.md](./CHANGELOG_zh-CN.md)（`v1.0` → `v4.0`）。
 
-**Phase 4 · 工程质量**
+## 许可证
 
-- 新增 `.pre-commit-config.yaml`（ruff / mypy / bandit / secret-scan / markdownlint / conventional commits）
-- 新增 `.gitlab-ci.yml` + `pyproject.toml`（uv 依赖管理、`scripts/setup_dev.sh`）
-- 测试套件：`tests/unit/` 68 passed（agent loop、HITL coordinator、deep_search、tools、sandbox 等）
-
-> 注：Pipeline 内 `pre_critique` HITL（harness HITLManager）尚未迁入 HitlCoordinator，列为 v4.x 后续项；端到端请在 MySQL + API Key 环境联调确认。
-
----
-
-### v3.0（2026-06-28）
-
-**Harness 工程全量改造 —— 让 harness 成为唯一执行脊柱**。本次重构修复了一个根本性架构缺陷：此前 `AppHarness.startup()` 从未被调用，导致整个 harness 层在运行时全部是死代码，真实流量绕过它们直调 `pipeline/workflow_graph`。v3.0 让 harness 真正接管所有 LLM 调用与工具执行，并补齐 MCP / OTel / 真流式 / 健壮性。
-
-**Phase 0 · 地基：harness 可达 + 单例唯一**
-
-- `AppHarness.startup()/shutdown()` 接入 FastAPI lifespan
-- 单例收敛到 `dependencies.py`
-- 修复致命 HITL bug：`interrupt()` + `wait_for_decision()`
-- `worker.py` 走 `pipeline_orchestrator.run()`
-
-**Phase 1 · 流水线 LLM 调用全部走 harness agent**
-
-- 统一委托 `DeepSeekAgent` / `ToTAgent`
-- 修复 per-task API Key bug
-- Token 记账收敛到 `BaseAgent.on_post_run`
-
-**Phase 2 · 死代码裁决 + Supervisor 接入**
-
-- 删除 `harness/session/`、`DebatePattern`
-- `HarnessToolRegistry` 成为唯一工具执行面
-- `SupervisorPattern` 接入深度搜索研究规划
-
-**Phase 3 · MCP**
-
-- 新增 `harness/mcp/`：FastMCP server + ReAct client
-
-**Phase 4 · OpenTelemetry**
-
-- OTel 自托管可观测（Jaeger/Tempo/console）
-
-**Phase 5 · 真异步流式**
-
-- `AsyncOpenAI` 异步迭代，SSE 契约不变
-
-**Phase 6 · 健壮性**
-
-- tenacity 重试、`BaseAgent.aclose()`、`RateLimiter` 接入工具注册表
-
----
-
-### v2.0（2026-05-31）
-
-**深度搜索重构** · LangGraph ReAct · 来源动态推送 · 流式答案与思考链
-
-**对话历史持久化** · ChatSession / ChatMessage · 上下文压缩
-
-**Token 统计修复** · 流式 token 记录
-
-**用户体验优化** · 日期注入 · 管理员模板 · 设置页重置 API
-
-**Docker 化部署** · 多阶段 Dockerfile + docker-compose
-
----
-
-### v1.0（2026-05-24）
-
-- 初始版本：PDF 解析、全文翻译、摘要提取、创新点评审
-- LangGraph StateGraph 流水线编排
-- DeepSeek + Qwen3 异构多智能体 ToT 策略
-- ChromaDB + BM25 多路 RAG 检索
-- SSE 实时进度推送 · JWT + 邮箱验证码认证
-
----
-
-*Developed with ❤️ by [ByteTitan-star](https://github.com/ByteTitan-star)*
+MIT © [ByteTitan-star](https://github.com/ByteTitan-star), 2026 — 详见 [LICENSE](LICENSE)。
