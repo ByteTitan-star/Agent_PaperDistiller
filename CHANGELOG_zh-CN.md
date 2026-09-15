@@ -2,6 +2,46 @@
 
 Agent Paper Distiller 的版本演进记录。
 
+## v5.0.0 — 2026-09-15
+
+**文档摄取管线 —— 统一 Document IR、分层解析器、本地公式识别、阶段状态机。**
+
+### Phase 0-1 · 解析内核
+
+- 统一 `DocumentIR`（可 JSON 持久化的章节 + 类型化节点 + 预检查报告），全管线共用
+- Preflight 预分类（文本层/扫描比/加密/双栏），有文本层的 PDF 绝不走 OCR
+- ParserRouter + 质量门禁：PyMuPDF 主通道（双栏阅读顺序、双通道标题识别、表格转 Markdown 并绑定题注）→ pypdf 兜底 → 可选 MinerU / PaddleOCR
+- 结构感知分块：`$$..$$` 公式与表格原子不切断；块携带 element_type/section/page/is_reference 元数据
+
+### Phase 2 · 本地公式链路
+
+- PP-DocLayout 区域检测替代字形密度启发式；4MB 轻量档随仓库分发（2×2 滑窗补全页分辨率），V2 经 `scripts/download_models.sh` 下载
+- PP-FormulaNet-S 本地识别（图片 → LaTeX，内嵌 tokenizer），免费离线替代 Mathpix；Mathpix/Pix2Text 仍可选
+- 图片型公式直接裁剪识别为 equation 节点
+
+### Phase 3-4 · 管线工程
+
+- 解析一次/翻译一次（产物持久化）；SHA-256 内容去重，重复上传不重跑解析
+- 类型化解析失败，错误文案不再流入下游
+- `document_jobs` 阶段状态机（UPLOADED → PARSING → CHUNKING → EMBEDDING → INDEXED / FAILED）
+- LLM 翻译通道保留 LaTeX/表格/术语；Google 免费接口降级为兜底
+
+### Phase 5-6 · 多模态与多格式
+
+- VLM 图表描述（题注绑定裁剪 → 结构化描述 → `image_desc` 检索块），支持同步/后台模式
+- GROBID 元数据增强 + 参考文献合并去重
+- FileRouter：Markdown / DOCX 与 PDF 产出同一 IR
+
+### Phase 7-8 · 体验与检索
+
+- 用户级管线偏好（`/api/settings/pipeline`）接入 SettingsView；上传组件支持 .md/.docx
+- 参考文献块默认排除出单论文与跨论文检索
+
+### Phase 9-11 · 运维
+
+- 内容哈希确定性 chunk ID；按 embedding 模型版本隔离集合（可选）；独立 Chroma Server 模式
+- 200 个单元测试（原 68），含真实模型集成测试
+
 ## v4.0.0 — 2026-07-05
 
 **原生 Agent 运行时 + bioagent HITL 对齐 —— 从 LangGraph 旁路走向生产级 AgentLoop。**
