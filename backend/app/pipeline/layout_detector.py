@@ -132,7 +132,7 @@ class PaddleLayoutDetector:
 
     name = "paddle-doclayout"
 
-    def __init__(self, model_dir: Path | str, score_threshold: float = 0.3) -> None:
+    def __init__(self, model_dir: Path | str, score_threshold: float = 0.3, tiles: int = 1) -> None:
         import numpy as np  # noqa: F401
         import paddle.inference as paddle_inference
 
@@ -145,6 +145,8 @@ class PaddleLayoutDetector:
             raise ValueError(f"版面检测模型文件缺失: {self.model_dir}")
 
         self._score_threshold = float(score_threshold)
+        # 滑窗切块数：轻量模型（480 输入）整页直检分辨率不足，切块各自送模型等效提分辨率
+        self._tiles = max(1, int(tiles))
         self._config = load_inference_config(self.model_dir)
         self._label_list = self._config["label_list"]
 
@@ -160,8 +162,8 @@ class PaddleLayoutDetector:
             self._config["target_size"],
         )
 
-    def detect(self, image_rgb: Any) -> list[RegionDetection]:
-        """RGB uint8 (H,W,3) -> 检测框列表（输入图像像素坐标）。"""
+    def _detect_single(self, image_rgb: Any) -> list[RegionDetection]:
+        """单图推理：RGB uint8 (H,W,3) -> 检测框（该输入图像素坐标）。"""
         import numpy as np
 
         height, width = image_rgb.shape[:2]
@@ -185,7 +187,7 @@ class PaddleLayoutDetector:
         output = self._predictor.get_output_handle(self._predictor.get_output_names()[0]).copy_to_cpu()
         detections = decode_paddlex_detections(output, self._label_list, self._score_threshold)
 
-        # 实测（PP-DocLayoutV2 导出图）：输出为 resize 后的模型坐标，需自行映射回原图
+        # 实测（PP-DocLayout 系列导出图）：输出为 resize 后的模型坐标，需自行映射回输入图坐标
         target_h, target_w = self._config["target_size"]
         scale_x = width / max(1, target_w)
         scale_y = height / max(1, target_h)
@@ -193,6 +195,76 @@ class PaddleLayoutDetector:
             x1, y1, x2, y2 = det.bbox
             det.bbox = (x1 * scale_x, y1 * scale_y, x2 * scale_x, y2 * scale_y)
         return detections
+
+    def detect(self, image_rgb: Any) -> list[RegionDetection]:
+        """RGB uint8 (H,W,3) -> 检测框列表（输入图像像素坐标）。
+
+        tiles=1 整图直检（V2 档默认）；tiles>1 滑窗切块检测（轻量 S 档默认）：
+        每块独立送模型（等效提升有效分辨率），坐标偏移回原图后跨块去重。
+        """
+        if self._tiles <= 1:
+            return self._detect_single(image_rgb)
+        return tiled_detect(self._tiles, image_rgb, self._detect_single)
+
+
+TILE_OVERLAP = 0.2  # 相邻块重叠比例（防目标被切块切断）
+
+
+def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    if inter <= 0:
+        return 0.0
+    area_a = (a[2] - a[0]) * (a[3] - a[1])
+    area_b = (b[2] - b[0]) * (b[3] - b[1])
+    return inter / max(1e-6, area_a + area_b - inter)
+
+
+def tiled_detect(
+    tiles: int,
+    image_rgb: Any,
+    detect_single: Any,
+    overlap: float = TILE_OVERLAP,
+) -> list[RegionDetection]:
+    """滑窗切块检测（纯编排，可单测）：块坐标偏移回原图 + 跨块 NMS 去重。
+
+    轻量模型（480 输入）整页直检会把小目标压没；切成 tiles×tiles 重叠块
+    各自送模型，等效把有效分辨率提升 tiles 倍。
+    """
+    height, width = image_rgb.shape[:2]
+    stride_x = width / tiles
+    stride_y = height / tiles
+    pad_x = stride_x * overlap
+    pad_y = stride_y * overlap
+
+    merged: list[RegionDetection] = []
+    for row in range(tiles):
+        for col in range(tiles):
+            x0 = max(0, int(col * stride_x - pad_x))
+            y0 = max(0, int(row * stride_y - pad_y))
+            x1 = min(width, int((col + 1) * stride_x + pad_x))
+            y1 = min(height, int((row + 1) * stride_y + pad_y))
+            if x1 - x0 < 8 or y1 - y0 < 8:
+                continue
+            for det in detect_single(image_rgb[y0:y1, x0:x1]):
+                bx0, by0, bx1, by1 = det.bbox
+                merged.append(
+                    RegionDetection(
+                        bbox=(bx0 + x0, by0 + y0, bx1 + x0, by1 + y0),
+                        label=det.label,
+                        score=det.score,
+                    )
+                )
+
+    # 跨块去重：同标签高 IoU 抑制，保留高分框
+    merged.sort(key=lambda d: d.score, reverse=True)
+    kept: list[RegionDetection] = []
+    for det in merged:
+        if any(det.label == k.label and _iou(det.bbox, k.bbox) > 0.5 for k in kept):
+            continue
+        kept.append(det)
+    return kept
 
 
 def _paddle_available() -> bool:
@@ -217,9 +289,12 @@ def get_layout_detector(settings: Any | None = None) -> LayoutDetector | None:
         logger.info("[版面检测] 模型目录不存在（%s），回退字形启发式", model_dir)
         return None
     try:
+        # 轻量档（480 输入）默认 2×2 滑窗补分辨率；V2（800 输入）整图直检
+        default_tiles = 2 if model_dir.name.endswith("-S_infer") else 1
         return PaddleLayoutDetector(
             model_dir=model_dir,
             score_threshold=float(_cfg(settings, "layout_detector_score", 0.3)),
+            tiles=int(_cfg(settings, "layout_detector_tiles", default_tiles)),
         )
     except Exception as exc:
         logger.warning("[版面检测] 模型加载失败，回退字形启发式: %s", exc)
@@ -242,4 +317,5 @@ __all__ = [
     "get_layout_detector",
     "load_inference_config",
     "preprocess_image",
+    "tiled_detect",
 ]

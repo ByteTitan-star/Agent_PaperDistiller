@@ -1,7 +1,7 @@
 <h1 align="center">⚗️ Agent Paper Distiller</h1>
 
 <p align="center">
-  <a href="https://github.com/ByteTitan-star/Agent_PaperDistiller/releases/tag/v4.0.0"><img src="https://img.shields.io/badge/PaperDistiller-v4.0.0-6e40c9" alt="PaperDistiller v4.0.0" /></a>
+  <a href="https://github.com/ByteTitan-star/Agent_PaperDistiller/releases/tag/v5.0.0"><img src="https://img.shields.io/badge/PaperDistiller-v5.0.0-6e40c9" alt="PaperDistiller v5.0.0" /></a>
   <img src="https://img.shields.io/badge/python-3.12-3776AB" alt="Python 3.12" />
   <img src="https://img.shields.io/badge/Vue-3-42b883" alt="Vue 3" />
   <img src="https://img.shields.io/badge/FastAPI-009688" alt="FastAPI" />
@@ -83,7 +83,7 @@ parser_backend=auto            # auto | pymupdf | pypdf | mineru
 parser_mineru_enabled=false    # complex papers: layout + formula LaTeX + table HTML (requires mineru CLI)
 parser_ocr_enabled=false       # scanned PDFs (requires paddleocr)
 formula_backend=off            # off | mathpix | pix2text | paddle (local PP-FormulaNet: cropped regions -> LaTeX -> $$..$$, free & offline)
-layout_detector=off            # off | doclayout: PP-DocLayout model detects formula regions (replaces glyph heuristic; `./scripts/download_models.sh` + `pip install paddlepaddle pillow`)
+layout_detector=off            # off | doclayout: formula-region detection. Ships the 4MB PP-DocLayout-S in-repo (2x2 tiling); `./scripts/download_models.sh` fetches the bigger high-accuracy V2 and local PP-FormulaNet recognition models
 vlm_enabled=false              # figure crops -> VLM description (qwen-vl) -> image_desc chunks
 vlm_mode=sync                  # sync (wait in pipeline) | async (background: instant indexing, descriptions backfill)
 vector_store_mode=local        # local (embedded) | server (standalone Chroma, set VECTOR_SERVER_URL)
@@ -171,7 +171,7 @@ UI_figures/       # Product screenshots
 
 ## Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md) for release history (`v1.0` → `v4.0.0`).
+See [CHANGELOG.md](./CHANGELOG.md) for release history (`v1.0` → `v5.0.0`).
 
 ## License
 

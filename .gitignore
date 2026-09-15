@@ -22,7 +22,12 @@ backend/app/data/
 backend/logs/
 
 # ML Models (downloaded at build time)
-backend/models/
+# 本地模型：默认忽略，仅入库轻量档 PP-DocLayout-S 与测试示例图（换机克隆即用）
+backend/models/*
+!backend/models/paddle/
+backend/models/paddle/*
+!backend/models/paddle/PP-DocLayout-S_infer/
+!backend/models/paddle/demo_formula.png
 
 # Node
 frontend/node_modules/
