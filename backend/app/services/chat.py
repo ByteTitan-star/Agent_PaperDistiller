@@ -139,6 +139,24 @@ def retrieve_contexts_lexical(question: str, chunks: list[str], top_k: int) -> l
     return retrieve_contexts_bm25(question, chunks, top_k)
 
 
+def _exclude_reference_chunks(
+    chunks: list[str],
+    paper_id: str,
+    storage,
+) -> tuple[list[str], list[dict]]:
+    """按 chunks_meta.json 过滤参考文献块；无元数据的旧数据原样返回。"""
+    try:
+        metas = storage.load_chunk_metas(paper_id)
+    except Exception:
+        metas = []
+    if not metas or len(metas) != len(chunks):
+        return chunks, []
+    kept = [(chunk, meta) for chunk, meta in zip(chunks, metas, strict=False) if not meta.get("is_reference")]
+    if not kept:  # 全是参考文献（如用户明确问参考文献）则不过滤
+        return chunks, metas
+    return [chunk for chunk, _ in kept], [meta for _, meta in kept]
+
+
 def retrieve_contexts(question: str, paper_id: str, top_k: int, storage) -> list[str]:
     """多路召回：向量检索 + BM25 词法召回，去重融合。
 
@@ -157,11 +175,12 @@ def retrieve_contexts(question: str, paper_id: str, top_k: int, storage) -> list
     Returns:
         list[str]: 融合后的上下文列表。
     """
-    # 向量语义检索
+    # 向量语义检索（向量库侧已默认排除 element_type=reference）
     vector_contexts = storage.search_similar_chunks(paper_id=paper_id, question=question, top_k=top_k)
 
-    # BM25 词法检索
+    # BM25 词法检索：参考文献块默认排除出 RAG 上下文
     chunks = storage.load_chunks(paper_id)
+    chunks, _ = _exclude_reference_chunks(chunks, paper_id, storage)
     bm25_contexts = retrieve_contexts_bm25(question, chunks, top_k) if chunks else []
 
     if not vector_contexts and not bm25_contexts:
@@ -270,6 +289,10 @@ def retrieve_global_contexts(
     )
     for pid in paper_ids_on_disk:
         chunks = storage.load_chunks(pid)
+        if not chunks:
+            continue
+        # 参考文献块默认排除出深度检索上下文（与单论文 RAG 行为一致）
+        chunks, _ = _exclude_reference_chunks(chunks, pid, storage)
         if not chunks:
             continue
         bm25_hits = retrieve_contexts_bm25(question, chunks, bm25_top_k)
