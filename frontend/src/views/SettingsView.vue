@@ -131,6 +131,81 @@
         </section>
       </div>
 
+      <!-- 解析与生成管线（用户级偏好，未设置时使用服务端默认值） -->
+      <section class="config-card pipeline-card" v-loading="pipeLoading">
+        <div class="card-header">
+          <h2>解析与生成管线</h2>
+          <p class="card-desc">
+            个人管线偏好：覆盖服务端默认值（仅本账号生效）。扫描件 OCR 与 MinerU 需服务端安装相应组件。
+          </p>
+        </div>
+
+        <div class="pipeline-grid">
+          <el-form-item label="解析引擎">
+            <el-select v-model="pipeForm.parser_backend" placeholder="auto（自动路由）">
+              <el-option label="auto（自动路由，推荐）" value="auto" />
+              <el-option label="pymupdf（原生 PDF 主通道）" value="pymupdf" />
+              <el-option label="pypdf（轻量兜底）" value="pypdf" />
+              <el-option label="mineru（复杂论文，需服务端安装）" value="mineru" />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="翻译通道">
+            <el-select v-model="pipeForm.translation_provider">
+              <el-option label="auto（有 Key 用 LLM，否则 Google）" value="auto" />
+              <el-option label="llm（LLM 翻译，公式 LaTeX 原样保留）" value="llm" />
+              <el-option label="google（Google 免费接口）" value="google" />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="公式识别">
+            <el-select v-model="pipeForm.formula_backend">
+              <el-option label="off（关闭）" value="off" />
+              <el-option label="mathpix（API，需服务端凭据）" value="mathpix" />
+              <el-option label="pix2text（本地模型，需安装）" value="pix2text" />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="MinerU 引擎">
+            <el-switch v-model="pipeForm.parser_mineru_enabled" />
+          </el-form-item>
+
+          <el-form-item label="扫描件 OCR">
+            <el-switch v-model="pipeForm.parser_ocr_enabled" />
+          </el-form-item>
+
+          <el-form-item label="VLM 图表描述">
+            <el-switch v-model="pipeForm.vlm_enabled" />
+          </el-form-item>
+
+          <el-form-item label="VLM 模型">
+            <el-input v-model="pipeForm.vlm_model" placeholder="qwen-vl-max" />
+          </el-form-item>
+
+          <el-form-item label="图表描述上限">
+            <el-input-number v-model="pipeForm.vlm_max_figures" :min="0" :max="50" />
+          </el-form-item>
+
+          <el-form-item label="GROBID 元数据">
+            <el-switch v-model="pipeForm.grobid_enabled" />
+          </el-form-item>
+
+          <el-form-item label="GROBID 地址">
+            <el-input v-model="pipeForm.grobid_base_url" placeholder="http://localhost:8070" />
+          </el-form-item>
+        </div>
+
+        <div class="save-row">
+          <el-tag v-for="(flag, key) in userSetFlags" :key="key" v-show="flag" type="warning" size="small" effect="plain" class="pref-tag">
+            {{ key }} 已自定义
+          </el-tag>
+          <el-button size="large" @click="resetPipelineDefaults" class="reset-btn">恢复默认</el-button>
+          <el-button type="primary" size="large" @click="savePipelinePrefs" :loading="pipeSaving" class="save-btn">
+            保存管线配置
+          </el-button>
+        </div>
+      </section>
+
       <!-- 创建/编辑模板弹窗 -->
       <el-dialog
         v-model="dialogVisible"
@@ -180,6 +255,8 @@ import { Plus, Upload } from "@element-plus/icons-vue";
 import {
   getApiKeys,
   updateApiKeys,
+  getPipelinePrefs,
+  updatePipelinePrefs,
   listTemplates,
   getTemplate,
   createTemplate,
@@ -387,13 +464,101 @@ const formatDate = (dateStr) => {
   return d.toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 };
 
+// ---- 解析与生成管线（用户级偏好） ----
+const pipeLoading = ref(false);
+const pipeSaving = ref(false);
+const userSetFlags = reactive({});
+const DEFAULT_PREFS = {
+  parser_backend: "auto",
+  parser_mineru_enabled: false,
+  parser_ocr_enabled: false,
+  formula_backend: "off",
+  translation_provider: "auto",
+  vlm_enabled: false,
+  vlm_model: "qwen-vl-max",
+  vlm_max_figures: 12,
+  grobid_enabled: false,
+  grobid_base_url: "http://localhost:8070",
+};
+const pipeForm = reactive({ ...DEFAULT_PREFS });
+
+const loadPipelinePrefs = async () => {
+  pipeLoading.value = true;
+  try {
+    const { data } = await getPipelinePrefs();
+    for (const key of Object.keys(DEFAULT_PREFS)) {
+      pipeForm[key] = data[key] ?? DEFAULT_PREFS[key];
+      userSetFlags[key] = !!data.is_user_set?.[key];
+    }
+  } catch (error) {
+    ElMessage.error("加载管线配置失败");
+  } finally {
+    pipeLoading.value = false;
+  }
+};
+
+const savePipelinePrefs = async () => {
+  pipeSaving.value = true;
+  try {
+    await updatePipelinePrefs({ ...pipeForm });
+    ElMessage.success("管线配置已保存");
+    await loadPipelinePrefs();
+  } catch (error) {
+    const message = error?.response?.data?.detail?.[0]?.msg || error?.response?.data?.detail || "保存失败";
+    ElMessage.error(String(message));
+  } finally {
+    pipeSaving.value = false;
+  }
+};
+
+const resetPipelineDefaults = async () => {
+  pipeSaving.value = true;
+  try {
+    // 清空用户覆盖：全部字段提交空值，后端按"未设置"存储并回退系统默认
+    await updatePipelinePrefs({
+      parser_backend: null,
+      parser_mineru_enabled: null,
+      parser_ocr_enabled: null,
+      formula_backend: null,
+      translation_provider: null,
+      vlm_enabled: null,
+      vlm_model: null,
+      vlm_max_figures: null,
+      grobid_enabled: null,
+      grobid_base_url: null,
+    });
+    ElMessage.success("已恢复系统默认配置");
+    await loadPipelinePrefs();
+  } catch (error) {
+    ElMessage.error("恢复默认失败");
+  } finally {
+    pipeSaving.value = false;
+  }
+};
+
 onMounted(() => {
   loadKeys();
   loadTemplates();
+  loadPipelinePrefs();
 });
 </script>
 
 <style scoped>
+.pipeline-card {
+  margin-top: 20px;
+}
+
+.pipeline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 6px 24px;
+  padding: 0 4px;
+}
+
+.pref-tag {
+  margin-right: 8px;
+}
+
 .settings-page {
   max-width: 1200px;
   margin: 0 auto;
