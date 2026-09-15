@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["upload"])
 settings = get_settings()
 
+# 支持的上传类型（与 storage.SUPPORTED_SOURCE_SUFFIXES 保持一致）
+SUPPORTED_UPLOAD_SUFFIXES = (".pdf", ".md", ".markdown", ".docx")
+
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_pdf(
@@ -29,13 +32,16 @@ async def upload_pdf(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UploadResponse:
-    """上传 PDF 论文并触发处理流水线。
+    """上传论文源文件（PDF/Markdown/DOCX）并触发处理流水线。
 
     前端页面：HomeView（首页 / 上传页）
-    用户操作：选择 PDF 文件 + 摘要模板 → 点击「上传」按钮
+    用户操作：选择文件 + 摘要模板 → 点击「上传」按钮
     """
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="仅支持上传 PDF 文件。")
+    if not file.filename or not file.filename.lower().endswith(SUPPORTED_UPLOAD_SUFFIXES):
+        raise HTTPException(
+            status_code=400,
+            detail="仅支持上传 PDF / Markdown / DOCX 文件。",
+        )
 
     from ..dependencies import storage
 
