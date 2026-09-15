@@ -119,6 +119,7 @@ CREATE TABLE user_api_configs (
     qwen_api_key        VARCHAR(500) DEFAULT NULL,          -- AES 加密
     qwen_base_url       VARCHAR(500) DEFAULT NULL,
     tavily_api_key      VARCHAR(500) DEFAULT NULL,          -- AES 加密
+    pipeline_prefs      TEXT         DEFAULT NULL,           -- 用户级管线偏好（JSON）
     updated_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     UNIQUE KEY uk_user_id (user_id),
@@ -126,6 +127,22 @@ CREATE TABLE user_api_configs (
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------
+-- 5.5 文档管线阶段状态机
+CREATE TABLE document_jobs (
+    id             BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    paper_id       VARCHAR(64)  NOT NULL,
+    task_id        VARCHAR(64)  NOT NULL,
+    stage          VARCHAR(32)  NOT NULL DEFAULT 'UPLOADED',   -- UPLOADED/PARSING/CHUNKING/EMBEDDING/INDEXED/FAILED
+    parser         VARCHAR(64)  DEFAULT NULL,                  -- 使用的解析引擎（pymupdf/pypdf/mineru/...）
+    error          TEXT         DEFAULT NULL,
+    stage_history  JSON         DEFAULT NULL,                  -- [{"stage": "...", "at": "...", "parser": "..."}]
+    created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    INDEX idx_job_paper (paper_id),
+    INDEX idx_job_task (task_id)
+) ENGINE=InnoDB;
+
 -- 6. 系统配置表（管理员可改）
 -- ----------------------------------------------------------
 CREATE TABLE system_settings (
