@@ -32,9 +32,11 @@ class Settings(BaseSettings):
     paddle_formula_model: str = "backend/models/paddle/PP-FormulaNet-S_infer"  # formula_backend=paddle 时使用
 
     # 公式区域检测（MFD）：off=字形密度启发式 | doclayout=PaddleX 版面模型（需 paddlepaddle + 模型）
+    # 默认 S 档（4MB，随仓库分发，克隆即用）；追求精度可换 V2（203MB，经 download_models.sh 下载）
     layout_detector: str = "off"
-    layout_detector_model: str = "backend/models/paddle/PP-DocLayoutV2_infer"  # 轻量可选 PP-DocLayout-S_infer（4MB）
+    layout_detector_model: str = "backend/models/paddle/PP-DocLayout-S_infer"
     layout_detector_score: float = 0.3
+    layout_detector_tiles: int = 0  # 滑窗切块数；0=按模型自动（S 档 2x2，V2 整图）
 
     # VLM 图表描述（figure 节点裁剪 -> 多模态模型描述 -> 入检索库）
     vlm_enabled: bool = False  # 复用 qwen_api_key / qwen_base_url

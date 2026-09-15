@@ -187,3 +187,74 @@ def test_real_detector_backend_integration(tmp_path: Path) -> None:
     equations = [n for n in ir.nodes if n.type == "equation"]
     assert len(equations) == 1
     del page_size
+
+
+# ---------------------------------------------------------------------
+# 轻量档（S）+ 滑窗：公式落位验收
+# ---------------------------------------------------------------------
+
+
+def test_tiled_detect_offsets_and_block_sizes() -> None:
+    """滑窗纯函数：2x2 切块尺寸正确，块内坐标加偏移映射回原图。"""
+    from app.pipeline.layout_detector import RegionDetection, tiled_detect
+
+    image = np.zeros((100, 200, 3), dtype=np.uint8)
+    calls: list[tuple[int, int]] = []
+
+    def fake_detect_single(tile):
+        h, w = tile.shape[:2]
+        calls.append((h, w))
+        return [RegionDetection((10, 10, 40, 20), "formula", 0.9)]
+
+    merged = tiled_detect(2, image, fake_detect_single)
+    # 块尺寸 = stride + 两侧 20% 重叠：宽 200/2*1.2=120，高 100/2*1.2=60
+    assert len(calls) == 4 and all((h, w) == (60, 120) for h, w in calls)
+    # 4 个块各一框，坐标 = 块内 local + 块偏移；右列块偏移 >= 80
+    xs = sorted(round(d.bbox[0]) for d in merged)
+    assert xs[0] == 10 and xs[-1] >= 90  # 左列块偏移 0，右列块偏移 80+
+    assert all(d.bbox[2] <= 200 and d.bbox[3] <= 100 for d in merged)  # 全部落在原图内
+
+
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[2] / "backend/models/paddle/PP-DocLayout-S_infer").exists(),
+    reason="PP-DocLayout-S 模型未下载",
+)
+@pytest.mark.skipif(not DEMO_FORMULA_PNG.exists(), reason="公式示例图未下载")
+def test_light_model_tiled_finds_formula_regions(tmp_path: Path) -> None:
+    """S 档（4MB）+ 默认 2×2 滑窗：整页 fixture 的公式全部检出且落位正确。
+
+    S 档（1M 参数/480 输入）整图直检会把小公式压没（0 检出），滑窗后等效
+    分辨率翻倍即可检出——这是它作为入库默认档的依据。右栏小字正文可能漏检，
+    但正文提取不依赖版面模型（走 PyMuPDF 文本层），不构成验收项。
+    """
+    doc = pymupdf.open()
+    page = doc.new_page(width=842, height=595)
+    image_rect = pymupdf.Rect(40, 80, 400, 540)
+    page.insert_image(image_rect, filename=str(DEMO_FORMULA_PNG))
+    page.insert_text((440, 120), "1. Introduction", fontsize=12, fontname="hebo")
+    pdf_path = tmp_path / "mfd_s.pdf"
+    doc.save(str(pdf_path))
+
+    from types import SimpleNamespace
+
+    from app.pipeline.layout_detector import get_layout_detector
+
+    detector = get_layout_detector(
+        SimpleNamespace(
+            layout_detector="doclayout",
+            layout_detector_model=str(MODEL_DIR.parent / "PP-DocLayout-S_infer"),
+            layout_detector_score=0.3,
+        )
+    )
+    assert detector._tiles == 2  # 轻量档默认滑窗
+
+    zoom = 2.0
+    pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
+    rgb = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+    frs = formula_regions(detector.detect(rgb))
+
+    assert len(frs) >= 3, "滑窗后应检出多个公式区域（直检为 0）"
+    ix0, iy0, ix1, iy1 = image_rect.x0 * zoom, image_rect.y0 * zoom, image_rect.x1 * zoom, image_rect.y1 * zoom
+    for det in frs:
+        assert det.bbox[0] >= ix0 - 30 and det.bbox[2] <= ix1 + 30
+        assert det.bbox[1] >= iy0 - 30 and det.bbox[3] <= iy1 + 30
