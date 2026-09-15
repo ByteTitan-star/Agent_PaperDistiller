@@ -133,11 +133,37 @@ class UserApiConfig(Base):
     qwen_api_key: Mapped[str | None] = mapped_column(String(500), default=None)
     qwen_base_url: Mapped[str | None] = mapped_column(String(500), default=None)
     tavily_api_key: Mapped[str | None] = mapped_column(String(500), default=None)
+    # 用户级管线偏好（JSON）：解析引擎/翻译通道/VLM/GROBID，见 routers/settings.py 白名单
+    pipeline_prefs: Mapped[str | None] = mapped_column(Text, default=None)
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
     user = relationship("User", back_populates="api_config")
+
+
+# ---------------------------------------------------------------------------
+# 5.5 文档管线阶段状态机（document_jobs）
+# ---------------------------------------------------------------------------
+class DocumentJob(Base):
+    """论文处理管线的分阶段状态跟踪：UPLOADED -> PARSING -> CHUNKING -> EMBEDDING -> INDEXED，任一阶段可转 FAILED。
+
+    与 TaskRecord（面向用户的粗粒度进度）互补，本表面向数据链路可观测：
+    能回答"文件处理到哪一步/卡在哪/用了哪个解析引擎"。
+    """
+
+    __tablename__ = "document_jobs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    paper_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False, default="UPLOADED")
+    parser: Mapped[str | None] = mapped_column(String(64), default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    # 阶段流转历史：[{"stage": "PARSING", "at": "ISO时间", "parser": "pymupdf"}]
+    stage_history: Mapped[list | None] = mapped_column(JSON, default=None)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 # ---------------------------------------------------------------------------

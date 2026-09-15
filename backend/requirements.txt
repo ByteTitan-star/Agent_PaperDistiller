@@ -3,6 +3,10 @@ uvicorn[standard]==0.35.0
 python-multipart==0.0.20
 pydantic-settings==2.10.1
 pypdf==5.9.0
+PyMuPDF>=1.24.0                  # 解析主通道（双栏阅读顺序/表格/字号标题）；扫描件与公式LaTeX可选装 mineru / paddleocr / pix2text
+python-docx>=1.1.0              # DOCX 解析（FileRouter：PDF / Markdown / DOCX）
+# 公式区域检测/公式识别（layout_detector=doclayout / formula_backend=paddle 时需要）：pip install paddlepaddle tokenizers pillow
+# 模型权重经 scripts/download_models.sh 下载到 backend/models/paddle/（不入库）
 openai>=1.0.0
 chromadb>=0.5.0
 sentence-transformers>=3.0.0

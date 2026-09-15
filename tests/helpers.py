@@ -64,7 +64,10 @@ class MockStorage:
         self.base_dir = base_dir
         self.pdf_text = pdf_text
         self.chunks: dict[str, list[str]] = {}
+        self.chunk_metas: dict[str, list[dict[str, Any]] | None] = {}
         self.results: dict[str, dict[str, str]] = {}
+        self.parse_artifacts: dict[str, Any] = {}
+        self.translated: dict[str, Any] = {}
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def pdf_path(self, paper_id: str) -> Path:
@@ -74,11 +77,32 @@ class MockStorage:
             path.write_text(self.pdf_text, encoding="utf-8")
         return path
 
-    def save_chunks(self, paper_id: str, chunks: list[str]) -> None:
+    def source_path(self, paper_id: str) -> Path:
+        return self.pdf_path(paper_id)
+
+    def save_chunks(self, paper_id: str, chunks: list[str], metas: list[dict[str, Any]] | None = None) -> None:
         self.chunks[paper_id] = chunks
+        self.chunk_metas[paper_id] = metas
 
     def load_chunks(self, paper_id: str) -> list[str]:
         return self.chunks.get(paper_id, [])
+
+    def load_chunk_metas(self, paper_id: str) -> list[dict[str, Any]]:
+        return []
+
+    def save_parse_artifact(self, paper_id: str, ir: Any) -> None:
+        self.parse_artifacts[paper_id] = ir
+
+    def load_parse_artifact(self, paper_id: str) -> Any | None:
+        return self.parse_artifacts.get(paper_id)
+
+    def save_translated_sections(
+        self, paper_id: str, target_language: str, translated_sections: list[tuple[str, str]], failures: int
+    ) -> None:
+        self.translated[(paper_id, target_language.lower())] = (translated_sections, failures)
+
+    def load_translated_sections(self, paper_id: str, target_language: str) -> Any | None:
+        return self.translated.get((paper_id, target_language.lower()))
 
     def write_result(self, paper_id: str, kind: str, content: str, template_name: str = "") -> None:
         self.results.setdefault(paper_id, {})[kind] = content

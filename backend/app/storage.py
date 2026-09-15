@@ -12,7 +12,10 @@ import logging
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .pipeline.document_ir import DocumentIR
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +225,8 @@ class VectorStore:
     - 向量存储与检索（使用 ChromaDB）
     """
 
+    SCHEMA_VERSION = 1  # chunk 元数据 schema 版本（结构变更时递增以隔离旧集合）
+
     def __init__(
         self,
         base_dir: Path,  # 基础数据目录
@@ -230,11 +235,21 @@ class VectorStore:
         collection_name: str,  # 集合名称（类似数据库表名）
         embedding_model_name: str,  # 嵌入模型名称
         distance_metric: str = "cosine",  # 距离度量方式：cosine/l2/ip
+        store_mode: str = "local",  # local=进程内持久化 | server=独立 Chroma 服务
+        server_url: str = "",  # server 模式连接地址
+        versioned_collection: bool = False,  # 按 embedding 模型+schema 后缀隔离集合
     ) -> None:
         self.provider = provider.lower().strip()
-        self.collection_name = collection_name
         self.embedding_model_name = embedding_model_name
         self.distance_metric = distance_metric
+        self.store_mode = store_mode.lower().strip()
+        self.server_url = server_url.strip()
+        self.versioned_collection = versioned_collection
+        self.collection_name = (
+            self.versioned_collection_name(collection_name, embedding_model_name, self.SCHEMA_VERSION)
+            if versioned_collection
+            else collection_name
+        )
         self.db_dir = base_dir / db_subdir  # 向量数据库实际存储路径
 
         # 延迟初始化相关状态
@@ -243,6 +258,16 @@ class VectorStore:
         self._client: Any | None = None  # ChromaDB客户端
         self._collection: Any | None = None  # ChromaDB集合
         self._embedder: Any | None = None  # 句子嵌入模型
+
+    @staticmethod
+    def versioned_collection_name(base_name: str, embedding_model: str, schema_version: int = 1) -> str:
+        """生成版本隔离集合名：{base}__{模型标签}_{短哈希}_v{schema}（纯函数，可单测）。
+
+        换 embedding 模型或 schema 升版时得到不同集合名，避免不同维度向量混库。
+        """
+        tag = re.sub(r"[^a-z0-9]+", "_", embedding_model.lower()).strip("_")[:24] or "model"
+        digest = hashlib.sha1(f"{embedding_model}:{schema_version}".encode(), usedforsecurity=False).hexdigest()[:8]
+        return f"{base_name}__{tag}_{digest}_v{schema_version}"
 
     @property
     def available(self) -> bool:
@@ -296,14 +321,28 @@ class VectorStore:
 
         # 初始化客户端和模型
         try:
-            self.db_dir.mkdir(parents=True, exist_ok=True)
-            # 创建持久化客户端（数据存放到本地目录）
-            self._client = chromadb.PersistentClient(path=str(self.db_dir))
+            if self.store_mode == "server":
+                # 独立 Chroma 服务（生产推荐：应用与向量库分进程部署）
+                if not self.server_url:
+                    self._disabled_reason = "server 模式未配置 vector_server_url"
+                    return False
+                from urllib.parse import urlparse
 
-            # 设置HNSW索引的空间度量方式
-            metadata = None
+                parsed = urlparse(self.server_url if "//" in self.server_url else f"http://{self.server_url}")
+                self._client = chromadb.HttpClient(
+                    host=parsed.hostname or "localhost",
+                    port=parsed.port or 8000,
+                    ssl=(parsed.scheme == "https"),
+                )
+            else:
+                self.db_dir.mkdir(parents=True, exist_ok=True)
+                # 创建持久化客户端（数据存放到本地目录，开发默认）
+                self._client = chromadb.PersistentClient(path=str(self.db_dir))
+
+            # 设置HNSW索引的空间度量方式 + embedding 模型标记（版本隔离审计）
+            metadata = {"embedding_model": self.embedding_model_name}
             if self.distance_metric in {"cosine", "l2", "ip"}:
-                metadata = {"hnsw:space": self.distance_metric}
+                metadata["hnsw:space"] = self.distance_metric
 
             # 获取或创建集合（如果不存在则自动创建）
             self._collection = self._client.get_or_create_collection(
@@ -320,24 +359,29 @@ class VectorStore:
             return False
 
     @staticmethod
-    def _chunk_id(paper_id: str, index: int) -> str:
+    def _chunk_id(paper_id: str, index: int, content: str = "") -> str:
         """
-        生成文本块的唯一标识符。
+        生成文本块的唯一标识符（内容确定性）。
 
-        格式：{paper_id}:{index}:{hash}
-        使用SHA1哈希确保ID的唯一性和稳定性。
+        格式：{paper_id}:{index}:{content-hash}
+        同一 (paper, index, content) 始终生成相同 ID，重跑解析不产生重复向量。
         """
-        digest = hashlib.sha1(f"{paper_id}:{index}".encode(), usedforsecurity=False).hexdigest()[:16]
+        digest = hashlib.sha1(f"{paper_id}:{index}:{content}".encode(), usedforsecurity=False).hexdigest()[:16]
         return f"{paper_id}:{index}:{digest}"
 
-    def upsert_chunks(self, paper_id: str, chunks: list[str]) -> None:
+    def upsert_chunks(
+        self,
+        paper_id: str,
+        chunks: list[str],
+        metas: list[dict[str, Any]] | None = None,
+    ) -> None:
         """
         将文本块存入向量数据库（插入或更新）。
 
         流程：
         1. 清理文本（UTF-8安全）
         2. 生成唯一ID列表
-        3. 生成元数据（包含paper_id用于过滤）
+        3. 生成元数据（paper_id/chunk_index + 可选 element_type/section/is_reference）
         4. 删除该论文旧数据（避免重复）
         5. 文本向量化（embedding）
         6. 批量存入ChromaDB
@@ -354,11 +398,16 @@ class VectorStore:
         if not docs:
             return
 
-        # 生成ID和元数据
-        ids = [self._chunk_id(paper_id, idx) for idx in range(len(docs))]
-        # 元数据每个文本块的附加信息，不是向量本身，一起存储
-        # 存的是paper_id论文唯一标识（ 和 chunk_index 块序号
-        metadatas = [{"paper_id": paper_id, "chunk_index": idx} for idx in range(len(docs))]
+        # 生成ID和元数据；metas 与 chunks 按索引对齐（长度不符时安全截断）
+        aligned_metas: list[dict[str, Any]] = []
+        for idx in range(len(docs)):
+            meta: dict[str, Any] = {"paper_id": paper_id, "chunk_index": idx}
+            if metas and idx < len(metas):
+                for key in ("element_type", "section", "is_reference", "page"):
+                    if metas[idx].get(key) is not None:
+                        meta[key] = metas[idx][key]
+            aligned_metas.append(meta)
+        ids = [self._chunk_id(paper_id, idx, doc) for idx, doc in enumerate(docs)]
 
         # 删除该论文已有数据（全量更新策略）
         try:
@@ -378,18 +427,19 @@ class VectorStore:
         self._collection.add(
             ids=ids,
             documents=docs,  # 原始文本（可选，用于结果返回）
-            metadatas=metadatas,  # 元数据（用于过滤）
-            embeddings=embeddings,  # 向量（用于相似度搜索）
+            metadatas=aligned_metas,  # 元数据（用于过滤）
+            embeddings=embeddings,  # 向量（用于相似性搜索）
         )
 
-    def query(self, paper_id: str, question: str, top_k: int) -> list[str]:
+    def query(self, paper_id: str, question: str, top_k: int, *, include_references: bool = False) -> list[str]:
         """
         向量相似度检索：根据问题查找最相关的文本块。
 
         流程：
         1. 问题文本向量化（使用相同的嵌入模型）
         2. 在指定论文的块中搜索最相似的top_k个
-        3. 返回原始文本列表
+        3. 默认过滤 element_type=reference 的参考文献块（兼容无元数据的旧数据）
+        4. 返回原始文本列表
 
         过滤条件：where={"paper_id": paper_id} 确保只查当前论文
         """
@@ -404,11 +454,11 @@ class VectorStore:
         if hasattr(query_embeddings, "tolist"):
             query_embeddings = query_embeddings.tolist()
 
-        # 执行相似度查询
+        # 多取一倍候选，客户端过滤参考文献后截断 top_k
         result = self._collection.query(
             query_embeddings=query_embeddings,  # 查询向量
-            n_results=max(1, top_k),  # 至少返回1个
-            where={"paper_id": paper_id},  # 仅搜索指定论文的块   找论文对应的块进行快速检索
+            n_results=max(1, top_k * 2),  # 至少返回1个
+            where={"paper_id": paper_id},  # 仅搜索指定论文的块
             include=["documents", "distances", "metadatas"],  # 返回文档内容和距离
         )
 
@@ -418,22 +468,35 @@ class VectorStore:
             return []
 
         first_batch = documents[0] or []
-        # 过滤掉异常数据，确保返回干净的文本列表
-        return [make_utf8_safe(doc) for doc in first_batch if isinstance(doc, str) and doc.strip()]
+        first_metas = (result.get("metadatas", [[]]) or [[]])[0] or []
+        cleaned: list[str] = []
+        for idx, doc in enumerate(first_batch):
+            if not isinstance(doc, str) or not doc.strip():
+                continue
+            meta = first_metas[idx] if idx < len(first_metas) else {}
+            if not include_references and meta.get("element_type") == "reference":
+                continue
+            cleaned.append(make_utf8_safe(doc))
+            if len(cleaned) >= top_k:
+                break
+        return cleaned
 
-    def query_global(self, question: str, top_k: int) -> list[dict]:
+    def query_global(self, question: str, top_k: int, *, include_references: bool = False) -> list[dict]:
         """
         跨论文向量检索：搜索全部论文的 chunk，不按 paper_id 过滤。
 
         与 query() 不同，此方法去掉 where 过滤，在全库范围内检索，
         返回带元数据的结构化结果，以便调用方知道每个 chunk 来自哪篇论文。
+        默认过滤 element_type=reference 的参考文献块（多取一倍候选后客户端过滤，
+        兼容无该元数据的旧数据）。
 
         Args:
             question: 用户问题文本。
             top_k: 返回的最大结果数。
+            include_references: 是否包含参考文献块（默认排除）。
 
         Returns:
-            list[dict]: 每个元素包含 text、paper_id、chunk_index、distance。
+            list[dict]: 每个元素包含 text、paper_id、chunk_index、element_type、distance。
                         向量库不可用时返回空列表。
         """
         if not question.strip():
@@ -446,10 +509,10 @@ class VectorStore:
         if hasattr(query_embeddings, "tolist"):
             query_embeddings = query_embeddings.tolist()
 
-        # 不带 where 过滤，搜索全部 chunk
+        # 不带 where 过滤，搜索全部 chunk（多取一倍用于参考文献过滤后仍有足量结果）
         result = self._collection.query(
             query_embeddings=query_embeddings,
-            n_results=max(1, top_k),
+            n_results=max(1, top_k * 2),
             include=["documents", "distances", "metadatas"],
         )
 
@@ -470,14 +533,19 @@ class VectorStore:
                 continue
             meta = first_metas[idx] if idx < len(first_metas) else {}
             dist = first_dists[idx] if idx < len(first_dists) else 0.0
+            if not include_references and meta.get("element_type") == "reference":
+                continue
             results.append(
                 {
                     "text": make_utf8_safe(doc),
                     "paper_id": meta.get("paper_id", "unknown"),
                     "chunk_index": meta.get("chunk_index", -1),
+                    "element_type": meta.get("element_type", ""),
                     "distance": dist,
                 }
             )
+            if len(results) >= top_k:
+                break
 
         return results
 
@@ -504,6 +572,9 @@ class Storage:
         embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",  # 嵌入模型
         vector_distance_metric: str = "cosine",  # 距离度量
         oss_client: OSSClient | None = None,  # OSS 客户端（可选）
+        vector_store_mode: str = "local",  # local | server（Chroma Server 拆分部署）
+        vector_server_url: str = "",  # server 模式地址
+        vector_collection_versioned: bool = False,  # 集合版本隔离
     ) -> None:
         self.base_dir = base_dir
         self.raw_dir = self.base_dir / "raw"  # 原始上传PDF
@@ -524,6 +595,9 @@ class Storage:
             collection_name=vector_collection_name,
             embedding_model_name=embedding_model_name,
             distance_metric=vector_distance_metric,
+            store_mode=vector_store_mode,
+            server_url=vector_server_url,
+            versioned_collection=vector_collection_versioned,
         )
 
     def _ensure_structure(self) -> None:
@@ -657,8 +731,10 @@ class Storage:
 
         可选保存原始文件名。
         """
-        output_pdf = self.paper_output_dir(paper_id) / "source.pdf"
-        legacy_pdf = self.raw_dir / f"{paper_id}.pdf"
+        raw_suffix = Path(source_filename or "paper.pdf").suffix.lower()
+        suffix = raw_suffix if raw_suffix in self.SUPPORTED_SOURCE_SUFFIXES else ".pdf"
+        output_pdf = self.paper_output_dir(paper_id) / f"source{suffix}"
+        legacy_pdf = self.raw_dir / f"{paper_id}{suffix}"
 
         # 分块读取并双写（1MB缓冲区）
         upload.file.seek(0)
@@ -686,9 +762,28 @@ class Storage:
         )
         return output_pdf
 
+    SUPPORTED_SOURCE_SUFFIXES = (".pdf", ".md", ".markdown", ".docx")
+
+    def source_path(self, paper_id: str) -> Path:
+        """
+        获取论文源文件路径（PDF/Markdown/DOCX 通用）。
+
+        扫描 processed/{paper_id}/source.* 返回第一个受支持扩展名的文件；
+        不存在时回退 raw 目录；最终兜底 source.pdf（保持旧行为）。
+        """
+        output_dir = self.paper_output_dir(paper_id)
+        for candidate in sorted(output_dir.glob("source.*")):
+            if candidate.suffix.lower() in self.SUPPORTED_SOURCE_SUFFIXES:
+                return candidate
+        for suffix in self.SUPPORTED_SOURCE_SUFFIXES:
+            fallback = self.raw_dir / f"{paper_id}{suffix}"
+            if fallback.exists():
+                return fallback
+        return output_dir / "source.pdf"
+
     def pdf_path(self, paper_id: str) -> Path:
         """
-        获取论文PDF路径。
+        获取论文PDF路径（仅 PDF 消费方使用，如前端阅读器）。
 
         优先返回processed目录，如果不存在则回退到raw目录。
         """
@@ -776,9 +871,10 @@ class Storage:
             return output_file.read_text(encoding="utf-8")
         return ""
 
-    def save_chunks(self, paper_id: str, chunks: list[str]) -> None:
-        """保存文本块到本地JSON + OSS，并同步到向量数据库。"""
-        path = self.paper_output_dir(paper_id) / "chunks.json"
+    def save_chunks(self, paper_id: str, chunks: list[str], metas: list[dict[str, Any]] | None = None) -> None:
+        """保存文本块（及可选元数据）到本地JSON + OSS，并同步到向量数据库。"""
+        output_dir = self.paper_output_dir(paper_id)
+        path = output_dir / "chunks.json"
         safe_chunks = [make_utf8_safe(chunk) for chunk in chunks]
         path.write_text(
             json.dumps(safe_chunks, ensure_ascii=False, indent=2),
@@ -787,8 +883,16 @@ class Storage:
         # 上传到 OSS
         self._upload_to_oss(path, paper_id, "chunks.json")  # 上传文本块到 OSS
 
+        # 块元数据（element_type/section/is_reference，供检索过滤）
+        meta_path = output_dir / "chunks_meta.json"
+        if metas:
+            meta_path.write_text(json.dumps(metas, ensure_ascii=False, indent=2), encoding="utf-8")
+            self._upload_to_oss(meta_path, paper_id, "chunks_meta.json")
+        else:
+            meta_path.unlink(missing_ok=True)
+
         try:
-            self.vector_store.upsert_chunks(paper_id, safe_chunks)
+            self.vector_store.upsert_chunks(paper_id, safe_chunks, metas=metas)
         except Exception:
             # 向量索引失败时不阻塞主流程，问答阶段自动回退词法检索。
             pass
@@ -802,6 +906,115 @@ class Storage:
         if self.oss and self.oss.available and self.oss.download_to_file(path, paper_id, "chunks.json"):
             return json.loads(path.read_text(encoding="utf-8"))
         return []
+
+    def load_chunk_metas(self, paper_id: str) -> list[dict[str, Any]]:
+        """加载文本块元数据（无元数据文件时返回空列表，兼容旧数据）。"""
+        path = self.paper_output_dir(paper_id) / "chunks_meta.json"
+        if not path.exists() and self.oss and self.oss.available:
+            self.oss.download_to_file(path, paper_id, "chunks_meta.json")
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                return []
+        return []
+
+    def save_parse_artifact(self, paper_id: str, ir: "DocumentIR") -> None:
+        """持久化解析产物（DocumentIR）：后续步骤复用，调切块/向量策略时不需重跑解析。"""
+
+        path = self.paper_output_dir(paper_id) / "parse_artifact.json"
+        ir.save(path)
+        self._upload_to_oss(path, paper_id, "parse_artifact.json")
+
+    def load_parse_artifact(self, paper_id: str) -> "DocumentIR | None":
+        """加载解析产物；本地不存在时尝试 OSS，失败返回 None。"""
+        from .pipeline.document_ir import DocumentIR
+
+        path = self.paper_output_dir(paper_id) / "parse_artifact.json"
+        if not path.exists() and self.oss and self.oss.available:
+            self.oss.download_to_file(path, paper_id, "parse_artifact.json")
+        return DocumentIR.load(path)
+
+    # ---------------- SHA256 去重（同文件重复上传复用解析产物） ----------------
+
+    @property
+    def sha_index_file(self) -> Path:
+        """文件内容哈希 -> paper_id 索引（data/sha256_index.json）。"""
+        return self.base_dir / "sha256_index.json"
+
+    @staticmethod
+    def file_sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
+
+    def _load_sha_index(self) -> dict[str, str]:
+        if self.sha_index_file.exists():
+            try:
+                data = json.loads(self.sha_index_file.read_text(encoding="utf-8"))
+                return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+            except (json.JSONDecodeError, OSError):
+                return {}
+        return {}
+
+    def record_sha256(self, paper_id: str, pdf_path: Path) -> str:
+        """记录文件哈希到索引；返回摘要值。"""
+        digest = self.file_sha256(pdf_path)
+        index = self._load_sha_index()
+        if index.get(digest) != paper_id:
+            index[digest] = paper_id
+            self.sha_index_file.parent.mkdir(parents=True, exist_ok=True)
+            self.sha_index_file.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
+        return digest
+
+    def find_artifact_by_sha256(self, pdf_path: Path) -> "DocumentIR | None":
+        """同一文件（内容级去重）已解析过则直接复用其解析产物，避免重复解析。"""
+        digest = self.file_sha256(pdf_path)
+        existing_id = self._load_sha_index().get(digest)
+        if not existing_id or existing_id == pdf_path.parent.name:
+            return None
+        ir = self.load_parse_artifact(existing_id)
+        if ir is not None and ir.ok:
+            logger.info("[Storage] SHA256 命中去重 | digest=%s | 复用 paper_id=%s", digest[:12], existing_id)
+            return ir
+        return None
+
+    def save_translated_sections(
+        self,
+        paper_id: str,
+        target_language: str,
+        translated_sections: list[tuple[str, str]],
+        failures: int,
+    ) -> None:
+        """持久化翻译产物：summarize/critique 复用，全文只翻译一次。"""
+        payload = {
+            "language": target_language,
+            "failures": failures,
+            "sections": [[title, content] for title, content in translated_sections],
+        }
+        path = self.paper_output_dir(paper_id) / "translated_sections.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        self._upload_to_oss(path, paper_id, "translated_sections.json")
+
+    def load_translated_sections(self, paper_id: str, target_language: str) -> tuple[list[tuple[str, str]], int] | None:
+        """加载翻译产物；语言不匹配或文件缺失返回 None（调用方需自行翻译）。"""
+        path = self.paper_output_dir(paper_id) / "translated_sections.json"
+        if not path.exists() and self.oss and self.oss.available:
+            self.oss.download_to_file(path, paper_id, "translated_sections.json")
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        if str(payload.get("language", "")).lower() != target_language.lower():
+            return None
+        sections = [(str(p[0]), str(p[1])) for p in payload.get("sections", []) if isinstance(p, (list, tuple))]
+        if not sections:
+            return None
+        return sections, int(payload.get("failures", 0))
 
     def search_similar_chunks(self, paper_id: str, question: str, top_k: int) -> list[str]:
         """

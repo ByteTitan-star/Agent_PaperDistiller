@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -5,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.crypto import aes_decrypt, aes_encrypt
 from ..auth.dependencies import get_current_admin, get_current_user
+from ..config import get_settings
 from ..database import get_db
 from ..models import SystemSetting, User, UserApiConfig
 
@@ -15,6 +18,104 @@ def _mask_key(key: str | None) -> str | None:
     if not key:
         return None
     return key[:4] + "****" + key[-4:] if len(key) > 8 else "****"
+
+
+# ---------------------------------------------------------------------------
+# 用户级管线偏好（解析引擎 / 翻译通道 / VLM / GROBID）
+# ---------------------------------------------------------------------------
+# 白名单 + 枚举校验：用户只能覆盖这些键，取值由 Literal 限制；
+# 未设置的键回退到服务端 .env / Settings 默认值。
+PIPELINE_PREF_KEYS = (
+    "parser_backend",
+    "parser_mineru_enabled",
+    "parser_ocr_enabled",
+    "formula_backend",
+    "translation_provider",
+    "vlm_enabled",
+    "vlm_model",
+    "vlm_max_figures",
+    "vlm_mode",
+    "grobid_enabled",
+    "grobid_base_url",
+)
+
+
+class PipelinePrefs(BaseModel):
+    parser_backend: Literal["auto", "pymupdf", "pypdf", "mineru"] | None = None
+    parser_mineru_enabled: bool | None = None
+    parser_ocr_enabled: bool | None = None
+    formula_backend: Literal["off", "mathpix", "pix2text"] | None = None
+    translation_provider: Literal["auto", "llm", "google"] | None = None
+    vlm_enabled: bool | None = None
+    vlm_model: str | None = None
+    vlm_max_figures: int | None = None
+    grobid_enabled: bool | None = None
+    grobid_base_url: str | None = None
+
+
+class PipelinePrefsResponse(PipelinePrefs):
+    is_user_set: dict[str, bool] = {}  # 各键是否为用户显式设置
+
+
+def _parse_prefs_json(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    import json
+
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return {k: v for k, v in data.items() if k in PIPELINE_PREF_KEYS} if isinstance(data, dict) else {}
+
+
+@router.get("/settings/pipeline", response_model=PipelinePrefsResponse)
+async def get_pipeline_prefs(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取管线偏好：用户覆盖值 + 服务端默认值合并后的生效配置。
+
+    前端页面：SettingsView（设置页）「解析与生成管线」卡片
+    用户操作：进入设置页自动加载回显
+    """
+    result = await db.execute(select(UserApiConfig).where(UserApiConfig.user_id == user.id))
+    config = result.scalar_one_or_none()
+    user_prefs = _parse_prefs_json(config.pipeline_prefs) if config else {}
+
+    defaults = get_settings()
+    payload = {key: user_prefs.get(key, getattr(defaults, key, None)) for key in PIPELINE_PREF_KEYS}
+    payload["is_user_set"] = {key: key in user_prefs for key in PIPELINE_PREF_KEYS}
+    return PipelinePrefsResponse.model_validate(payload)
+
+
+@router.put("/settings/pipeline")
+async def update_pipeline_prefs(
+    body: PipelinePrefs,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """保存用户级管线偏好（白名单键，JSON 存储；空值表示回退系统默认）。
+
+    前端页面：SettingsView（设置页）「解析与生成管线」卡片
+    用户操作：修改解析引擎/翻译通道/VLM/GROBID 选项 → 点击「保存管线配置」
+    """
+    import json
+
+    prefs = {key: value for key, value in body.model_dump().items() if value is not None}
+
+    result = await db.execute(select(UserApiConfig).where(UserApiConfig.user_id == user.id))
+    config = result.scalar_one_or_none()
+    if not config:
+        config = UserApiConfig(user_id=user.id)
+        db.add(config)
+        await db.flush()
+        result = await db.execute(select(UserApiConfig).where(UserApiConfig.user_id == user.id))
+        config = result.scalar_one()
+
+    config.pipeline_prefs = json.dumps(prefs, ensure_ascii=False) if prefs else None
+    await db.flush()
+    return {"message": "管线配置已更新"}
 
 
 class ApiKeysResponse(BaseModel):

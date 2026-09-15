@@ -52,6 +52,8 @@ export const resetPassword = (data) => client.post("/api/auth/reset-password", d
 // ---------------------------------------------------------------------------
 export const getApiKeys = () => client.get("/api/settings/api-keys");
 export const updateApiKeys = (data) => client.put("/api/settings/api-keys", data);
+export const getPipelinePrefs = () => client.get("/api/settings/pipeline");
+export const updatePipelinePrefs = (data) => client.put("/api/settings/pipeline", data);
 
 // Admin
 export const adminListUsers = () => client.get("/api/auth/users");

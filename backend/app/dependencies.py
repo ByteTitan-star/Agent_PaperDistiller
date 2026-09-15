@@ -31,6 +31,9 @@ storage = Storage(
     embedding_model_name=settings.embedding_model_name,
     vector_distance_metric=settings.vector_distance_metric,
     oss_client=oss_client,
+    vector_store_mode=settings.vector_store_mode,
+    vector_server_url=settings.vector_server_url,
+    vector_collection_versioned=settings.vector_collection_versioned,
 )
 broker = TaskBroker()
 
