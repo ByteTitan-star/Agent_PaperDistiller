@@ -21,7 +21,7 @@
 
 **Agent Paper Distiller** is a full-stack research workspace for academic paper distillation.
 
-Upload a PDF, choose an extraction template (Skill), and the system runs parse → translate → summarize → improve. A dual-pane workspace keeps the original PDF beside generated Markdown (with LaTeX), while RAG chat and deep search let you ask follow-up questions with live sources and HITL checkpoints.
+Upload a paper (PDF / Markdown / DOCX), choose an extraction template (Skill), and the system runs parse → translate → summarize → improve. A dual-pane workspace keeps the original PDF beside generated Markdown (with LaTeX), while RAG chat and deep search let you ask follow-up questions with live sources and HITL checkpoints.
 
 Built with **Vue 3** + **FastAPI**, powered by a production **AgentLoop** runtime (tools, sandbox, sub-agents) and a paper pipeline orchestrator.
 
@@ -69,7 +69,30 @@ Built with **Vue 3** + **FastAPI**, powered by a production **AgentLoop** runtim
 | Agents | Native AgentLoop, harness orchestrator, optional MCP / OTel |
 | Retrieval | ChromaDB + hybrid RAG |
 | Models | DeepSeek / Qwen (and compatible OpenAI-style providers) |
+| Doc parsing | FileRouter: PDF (PyMuPDF main path -> pypdf fallback) / Markdown / DOCX; optional MinerU / PaddleOCR / Mathpix / GROBID |
 | Deploy | Docker multi-stage build + `docker-compose.yml` |
+
+### PDF parsing engine
+
+Papers are parsed once into a canonical `DocumentIR` (sections + nodes + preflight report, persisted as `parse_artifact.json`); every later step reuses that artifact. Structure-aware chunking keeps `$$...$$` formulas and Markdown tables atomic, chunks carry `element_type / section / page` metadata, and reference chunks are excluded from retrieval (per-paper RAG and cross-paper deep search) by default. With a formula backend enabled, the PyMuPDF path detects math-dense regions, crops them, converts to LaTeX, and backfills `$$...$$` blocks — falling back to raw glyphs when recognition fails.
+
+Optional engines (off by default, graceful degradation when not installed):
+
+```env
+parser_backend=auto            # auto | pymupdf | pypdf | mineru
+parser_mineru_enabled=false    # complex papers: layout + formula LaTeX + table HTML (requires mineru CLI)
+parser_ocr_enabled=false       # scanned PDFs (requires paddleocr)
+formula_backend=off            # off | mathpix | pix2text | paddle (local PP-FormulaNet: cropped regions -> LaTeX -> $$..$$, free & offline)
+layout_detector=off            # off | doclayout: PP-DocLayout model detects formula regions (replaces glyph heuristic; `./scripts/download_models.sh` + `pip install paddlepaddle pillow`)
+vlm_enabled=false              # figure crops -> VLM description (qwen-vl) -> image_desc chunks
+vlm_mode=sync                  # sync (wait in pipeline) | async (background: instant indexing, descriptions backfill)
+vector_store_mode=local        # local (embedded) | server (standalone Chroma, set VECTOR_SERVER_URL)
+vector_collection_versioned=false  # isolate collections per embedding model + schema version
+grobid_enabled=false           # scholarly metadata enrichment (title/authors/DOI/references)
+translation_provider=auto      # auto | llm | google (LLM keeps $...$ LaTeX intact)
+```
+
+Re-uploading the same file (content-level SHA256) reuses the stored parse artifact instead of re-parsing; Mathpix results are cached by image hash to avoid duplicate billing.
 
 ## Quick start
 
