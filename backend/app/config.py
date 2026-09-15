@@ -17,6 +17,43 @@ class Settings(BaseSettings):
     max_chunk_chars: int = 900
     chunk_overlap: int = 120
 
+    # PDF 解析引擎（ParserRouter）
+    parser_backend: str = "auto"  # auto | pymupdf | pypdf | mineru
+    parser_min_chars_per_page: int = 24  # 单页有效字符低于该值视为"无文本页"
+    parser_quality_min_chars_per_page: float = 20.0  # 质量门禁：每页有效字符下限
+    parser_quality_min_sections: int = 3  # 质量门禁：章节数达标即通过
+    parser_mineru_enabled: bool = False  # 复杂论文 PDF（版面+公式LaTeX+表格HTML），需安装 mineru CLI
+    parser_ocr_enabled: bool = False  # 扫描件 OCR，需安装 paddleocr
+
+    # 公式识别（cropped image -> LaTeX）
+    formula_backend: str = "off"  # off | mathpix | pix2text | paddle（本地 PP-FormulaNet，免费离线）
+    mathpix_app_id: str = ""
+    mathpix_app_key: str = ""
+    paddle_formula_model: str = "backend/models/paddle/PP-FormulaNet-S_infer"  # formula_backend=paddle 时使用
+
+    # 公式区域检测（MFD）：off=字形密度启发式 | doclayout=PaddleX 版面模型（需 paddlepaddle + 模型）
+    layout_detector: str = "off"
+    layout_detector_model: str = "backend/models/paddle/PP-DocLayoutV2_infer"  # 轻量可选 PP-DocLayout-S_infer（4MB）
+    layout_detector_score: float = 0.3
+
+    # VLM 图表描述（figure 节点裁剪 -> 多模态模型描述 -> 入检索库）
+    vlm_enabled: bool = False  # 复用 qwen_api_key / qwen_base_url
+    vlm_model: str = "qwen-vl-max"
+    vlm_max_figures: int = 12  # 单篇论文最多描述的图片数
+    vlm_concurrency: int = 3  # VLM 并发上限
+    vlm_timeout_sec: float = 60.0
+    vlm_mode: str = "sync"  # sync=管线内等待 | async=后台执行（极速入库，描述异步补全）
+
+    # GROBID 学术元数据增强（title/authors/abstract/DOI/references）
+    grobid_enabled: bool = False  # 需自建 GROBID 服务（默认端口 8070）
+    grobid_base_url: str = "http://localhost:8070"
+    grobid_timeout_sec: float = 30.0
+
+    # 翻译通道：auto（有 LLM key 用 LLM，否则 Google）| llm | google
+    translation_provider: str = "auto"
+    translation_llm_concurrency: int = 4
+    translation_llm_max_chars: int = 2000  # 单次送 LLM 的文本长度上限
+
     # 展示字段
     llm_model_name: str = "DeepSeek-Agent"
     embedding_model_name: str = "models/bge-m3"
@@ -42,6 +79,11 @@ class Settings(BaseSettings):
     vector_collection_name: str = "paper_chunks"
     vector_db_subdir: str = "vectordb"
     vector_distance_metric: str = "cosine"
+    # Chroma Server 拆分部署：local=进程内持久化（开发默认）| server=独立向量服务（生产推荐）
+    vector_store_mode: str = "local"
+    vector_server_url: str = ""  # server 模式地址，如 http://chroma:8000
+    # collection 版本隔离：True 时按 embedding 模型+schema 生成后缀集合名，换模型不混库
+    vector_collection_versioned: bool = False
     rag_default_top_k: int = 4
     rag_fallback_to_lexical: bool = True
 

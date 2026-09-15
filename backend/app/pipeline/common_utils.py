@@ -1,6 +1,7 @@
 import datetime as dt
 import os
 import re
+from pathlib import Path
 
 # 清理 UTF-16 代理字符，避免 JSON/Markdown 序列化异常。
 SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
@@ -9,7 +10,9 @@ SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
 # Token 消耗记录功能
 # ---------------------------------------------------------------------
 
-TOKEN_MD_PATH = r"D:\Z-Desktop\找工作\8大模型开发\实战项目\Token记录\token.md"
+# Token 记录文件路径：环境变量 TOKEN_MD_PATH 可覆盖，默认 data/token.md。
+# （历史版本硬编码了开发机的 Windows 绝对路径，在 macOS/Linux 会创建出非法目录。）
+TOKEN_MD_PATH = os.environ.get("TOKEN_MD_PATH") or str(Path("data") / "token.md")
 
 
 def log_token_usage(
