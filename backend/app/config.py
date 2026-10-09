@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     vlm_timeout_sec: float = 60.0
     vlm_mode: str = "sync"  # sync=管线内等待 | async=后台执行（极速入库，描述异步补全）
 
+    # 表格升级识别：无框线/图片表格经区域裁剪 -> VLM 转 Markdown（复用 qwen key）
+    table_recognition: str = "off"  # off | vlm
+
     # GROBID 学术元数据增强（title/authors/abstract/DOI/references）
     grobid_enabled: bool = False  # 需自建 GROBID 服务（默认端口 8070）
     grobid_base_url: str = "http://localhost:8070"
@@ -55,6 +58,8 @@ class Settings(BaseSettings):
     translation_provider: str = "auto"
     translation_llm_concurrency: int = 4
     translation_llm_max_chars: int = 2000  # 单次送 LLM 的文本长度上限
+    translation_breaker_threshold: int = 3  # LLM 翻译连续失败 N 次触发熔断
+    translation_breaker_cooldown_sec: float = 60.0  # 熔断冷却（半开试探前等待）
 
     # 展示字段
     llm_model_name: str = "DeepSeek-Agent"

@@ -43,6 +43,7 @@ from .section_headings import (
     parse_section_heading,
     split_text_into_sections,
 )
+from .table_extraction import bbox_iou, table_quality_report
 
 logger = logging.getLogger(__name__)
 
@@ -157,9 +158,13 @@ class PyMuPDFBackend:
         self,
         formula_recognizer: Any | None = None,
         layout_detector: Any | None = None,
+        ocr_fallback: Any | None = None,
+        table_recognizer: Any | None = None,
     ) -> None:
         self._formula_recognizer = formula_recognizer
         self._layout_detector = layout_detector
+        self._ocr_fallback = ocr_fallback
+        self._table_recognizer = table_recognizer
 
     def is_available(self) -> bool:
         return _pymupdf_available()
@@ -187,12 +192,13 @@ class PyMuPDFBackend:
                 caption_lines,
                 equation_nodes,
                 image_formulas,
+                table_blocks,
             ) = self._extract_pages(doc, pf)
         finally:
             doc.close()
 
         sections, heading_nodes, references = self._group_sections(ordered_lines, body_size)
-        full_text = self._build_full_text(ordered_lines, extra_page_blocks=image_formulas)
+        full_text = self._build_full_text(ordered_lines, extra_page_blocks=image_formulas + table_blocks)
 
         nodes: list[DocNode] = list(heading_nodes)
         nodes.extend(equation_nodes)
@@ -247,6 +253,7 @@ class PyMuPDFBackend:
         caption_lines: list[LineInfo] = []
         equation_nodes: list[DocNode] = []
         image_formulas: list[tuple[int, str]] = []  # (page_no, $$LaTeX$$)——图片型公式回填全文
+        table_blocks: list[tuple[int, str]] = []  # (page_no, Markdown 表格)——表格回填全文
 
         table_seq = 0
         figure_seq = 0
@@ -265,6 +272,17 @@ class PyMuPDFBackend:
                     markdown = _rows_to_markdown(rows)
                     if not markdown:
                         continue
+                    # 置信度门禁：矢量网格健全性检查，垃圾结果升级视觉识别（无识别器则保留并标记）
+                    quality = table_quality_report(rows)
+                    source = "vector"
+                    if not quality["sane"]:
+                        pf.warnings.append(f"第 {page_no} 页矢量表格质量存疑（{quality['reason']}），尝试升级识别")
+                        escalated = self._recognize_table_clip(page, tbl.bbox)
+                        if escalated:
+                            markdown = escalated
+                            source = "model"
+                        else:
+                            source = "vector_low_quality"
                     table_seq += 1
                     x0, y0, x1, y1 = tbl.bbox
                     table_bboxes.append(tbl.bbox)
@@ -275,9 +293,10 @@ class PyMuPDFBackend:
                             text=markdown,
                             page=page_no,
                             bbox=[x0, y0, x1, y1],
-                            meta={"seq": table_seq},
+                            meta={"seq": table_seq, "source": source, "sane": quality["sane"]},
                         )
                     )
+                    table_blocks.append((page_no, markdown))
             except Exception as exc:  # 表格识别失败不影响正文抽取
                 pf.warnings.append(f"第 {page_no} 页表格识别失败: {exc}")
 
@@ -343,6 +362,7 @@ class PyMuPDFBackend:
             else:
                 ordered = sorted(page_lines, key=lambda ln: (ln.bbox[1], ln.bbox[0]))
 
+            lines_before = len(ordered_lines)
             for ln in ordered:
                 stripped = ln.text.strip()
                 if not stripped or re.fullmatch(r"(Page\s+)?\d{1,4}( of \d+)?", stripped, re.IGNORECASE):
@@ -351,22 +371,110 @@ class PyMuPDFBackend:
                     caption_lines.append(ln)
                 ordered_lines.append(ln)
 
+            # 混合文档兜底：本页无文本层（纯扫描/图片页）则按页 OCR，其余页不受影响
+            if len(ordered_lines) == lines_before:
+                ocr_lines = self._ocr_empty_page(page, pf)
+                for idx, text in enumerate(ocr_lines):
+                    ordered_lines.append(
+                        LineInfo(text=text, size=0.0, bold=False, page=page_no, bbox=(0.0, 0.0, 0.0, 0.0))
+                    )
+                    del idx
+
             # 公式链路：版面模型检测公式区域（优先）-> 行标记 -> 裁剪识别 -> $$LaTeX$$ 回填
             if self._layout_detector is not None:
-                unmatched = self._mark_formula_lines_with_detector(page, ordered_lines, pf)
+                unmatched, detected_table_regions = self._mark_formula_lines_with_detector(page, ordered_lines, pf)
                 # 图片型公式（区域内无文本行）：直接裁剪识别，产出 equation 节点
                 self._recognize_image_formulas(page, unmatched, equation_nodes, image_formulas)
+                # 无框线/图片表格：检测出 table 区域但矢量抽取未覆盖 -> 区域升级识别
+                self._escalate_detected_tables(
+                    page, detected_table_regions, table_bboxes, table_nodes, table_blocks, pf
+                )
             self._apply_formula_recognition(page, ordered_lines, equation_nodes)
 
-        return ordered_lines, table_nodes, figure_nodes, caption_lines, equation_nodes, image_formulas
+        return ordered_lines, table_nodes, figure_nodes, caption_lines, equation_nodes, image_formulas, table_blocks
+
+    def _recognize_table_clip(self, page, bbox: tuple[float, float, float, float]) -> str | None:
+        """裁剪表格区域渲染 PNG 并识别为 Markdown 表格（失败返回 None）。"""
+        if self._table_recognizer is None:
+            return None
+        try:
+            pymupdf = _pymupdf()
+            x0, y0, x1, y1 = bbox
+            clip = pymupdf.Rect(max(0, x0), max(0, y0), min(page.rect.x1, x1), min(page.rect.y1, y1))
+            if clip.is_empty or clip.width < 4 or clip.height < 4:
+                return None
+            pixmap = page.get_pixmap(clip=clip, matrix=pymupdf.Matrix(2, 2))
+            markdown = self._table_recognizer.recognize(pixmap.tobytes("png"))  # type: ignore[union-attr]
+            if markdown and markdown.count("\n") >= 1 and "|" in markdown:
+                return markdown
+            return None
+        except Exception as exc:
+            logger.warning("[表格识别] 区域裁剪识别失败: %s", exc)
+            return None
+
+    def _escalate_detected_tables(
+        self,
+        page,
+        detected_regions: list[tuple[float, float, float, float]],
+        vector_bboxes: list[tuple[float, float, float, float]],
+        table_nodes: list[DocNode],
+        table_blocks: list[tuple[int, str]],
+        pf: PreflightReport,
+    ) -> None:
+        """版面检测到 table 但矢量抽取未覆盖（无框线/图片表格）-> 区域升级识别。
+
+        与矢量表格的重复判定：IoU >= 0.3 视为已覆盖，跳过。
+        未配置识别器时只告警（不阻塞正文，表格降级为缺失而非误产）。
+        """
+        if not detected_regions:
+            return
+        page_no = page.number + 1
+        for region in detected_regions:
+            if any(bbox_iou(region, vb) >= 0.3 for vb in vector_bboxes):
+                continue  # 矢量通道已覆盖
+            markdown = self._recognize_table_clip(page, region)
+            if not markdown:
+                if self._table_recognizer is not None:
+                    pf.warnings.append(f"第 {page_no} 页检测到未覆盖表格区域，模型识别失败")
+                else:
+                    pf.warnings.append(f"第 {page_no} 页存在无框线/图片表格，未启用升级识别（table_recognition）")
+                continue
+            node = DocNode(
+                node_id=f"table-model-p{page_no}-{len(table_nodes) + 1}",
+                type="table",
+                text=markdown,
+                page=page_no,
+                bbox=[region[0], region[1], region[2], region[3]],
+                meta={"source": "model", "sane": True, "escalated": True},
+            )
+            table_nodes.append(node)
+            table_blocks.append((page_no, markdown))
+            vector_bboxes.append(region)  # 防同页重复升级
+            logger.info("[表格升级] 第 %d 页：检测区域经模型识别为 Markdown 表格", page_no)
+
+    def _ocr_empty_page(self, page, pf: PreflightReport) -> list[str]:
+        """按页 OCR 兜底：引擎缺失时只告警（不阻塞整份文档其余页的解析）。"""
+        page_no = page.number + 1
+        if self._ocr_fallback is None:
+            pf.warnings.append(f"第 {page_no} 页无文本层且未启用按页 OCR（parser_ocr_enabled）")
+            return []
+        try:
+            lines = self._ocr_fallback.page_lines(page)
+            if lines:
+                logger.info("[按页OCR] 第 %d 页补全 %d 行", page_no, len(lines))
+            return lines
+        except Exception as exc:
+            pf.warnings.append(f"第 {page_no} 页按页 OCR 失败: {exc}")
+            return []
 
     def _mark_formula_lines_with_detector(
         self, page, ordered_lines: list[LineInfo], pf: PreflightReport
-    ) -> list[tuple[float, float, float, float]]:
+    ) -> tuple[list[tuple[float, float, float, float]], list[tuple[float, float, float, float]]]:
         """版面模型检测 display 公式区域 -> 区域内文本行标记为公式行（替代字形启发式）。
 
-        返回未命中任何文本行的区域（PDF pt 坐标）——图片型公式，交由
-        _recognize_image_formulas 直接裁剪识别。检测失败只告警回退启发式。
+        返回 (未命中任何文本行的公式区域, 检测到的 table 区域)，均为 PDF pt 坐标；
+        前者交由 _recognize_image_formulas 裁剪识别，后者供表格升级链使用。
+        检测失败只告警回退启发式。
         """
         try:
             import numpy as np
@@ -375,9 +483,15 @@ class PyMuPDFBackend:
             pixmap = page.get_pixmap(matrix=_pymupdf().Matrix(zoom, zoom), alpha=False)
             rgb = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(pixmap.height, pixmap.width, pixmap.n)
             assert self._layout_detector is not None  # 调用方已判空，仅为类型收窄
-            regions = formula_regions(self._layout_detector.detect(rgb))
+            detections = self._layout_detector.detect(rgb)
+            regions = formula_regions(detections)
+            table_regions_pt = [
+                (d.bbox[0] / zoom, d.bbox[1] / zoom, d.bbox[2] / zoom, d.bbox[3] / zoom)
+                for d in detections
+                if d.label == "table"
+            ]
             if not regions:
-                return []
+                return [], table_regions_pt
             # 像素坐标 -> PDF pt 坐标
             boxes = [(d.bbox[0] / zoom, d.bbox[1] / zoom, d.bbox[2] / zoom, d.bbox[3] / zoom) for d in regions]
             page_no = page.number + 1
@@ -394,11 +508,12 @@ class PyMuPDFBackend:
                         break
             if matched_boxes:
                 logger.info("[版面检测] 第 %d 页：%d 行落入公式区域（模型检测）", page_no, len(matched_boxes))
-            return [boxes[i] for i in range(len(boxes)) if i not in matched_boxes]
+            unmatched_boxes = [boxes[i] for i in range(len(boxes)) if i not in matched_boxes]
+            return unmatched_boxes, table_regions_pt
         except Exception as exc:
             pf.warnings.append(f"第 {page.number + 1} 页版面检测失败（回退字形启发式）: {exc}")
             logger.warning("[版面检测] 第 %d 页检测异常: %s", page.number + 1, exc)
-        return []
+        return [], []
 
     def _recognize_image_formulas(
         self,
@@ -980,6 +1095,139 @@ class PaddleOCRBackend:
 
 
 # ---------------------------------------------------------------------
+# 统一输入层：受支持格式 / TXT 通道 / 图片 OCR 通道 / 按页 OCR 兜底
+# ---------------------------------------------------------------------
+
+# FileRouter 支持的全部输入格式
+SUPPORTED_FILE_SUFFIXES = (
+    ".pdf",
+    ".md",
+    ".markdown",
+    ".docx",
+    ".txt",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".bmp",
+    ".webp",
+)
+IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".bmp", ".webp"})
+
+
+class PaddlePageOcr:
+    """按页/按图 OCR 引擎（paddleocr 守卫导入，懒加载；供 PyMuPDFBackend 注入与图片输入复用）。"""
+
+    name = "paddle-page-ocr"
+
+    def __init__(self) -> None:
+        from paddleocr import PaddleOCR
+
+        try:
+            self._engine = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+        except TypeError:  # 新版 paddleocr 移除了 show_log 参数
+            self._engine = PaddleOCR(use_angle_cls=True, lang="en")
+
+    @staticmethod
+    def available() -> bool:
+        try:
+            import paddleocr  # noqa: F401
+        except Exception:
+            return False
+        return True
+
+    def _lines_from_result(self, result: Any) -> list[str]:
+        lines: list[str] = []
+        for block in result or []:
+            for item in block or []:
+                try:
+                    text = str(item[1][0])
+                except (TypeError, IndexError):
+                    continue
+                if text.strip():
+                    lines.append(text.strip())
+        return lines
+
+    def page_lines(self, page: Any) -> list[str]:
+        """渲染单页并 OCR（用于原生文档内的扫描页兜底）。"""
+        pixmap = page.get_pixmap(matrix=_pymupdf().Matrix(2, 2))
+        result = self._engine.ocr(pixmap.tobytes("png"), cls=True)
+        return self._lines_from_result(result)
+
+    def image_lines(self, image_path: Path) -> list[str]:
+        """OCR 整张图片文件（图片输入格式的主通道）。"""
+        result = self._engine.ocr(str(image_path), cls=True)
+        return self._lines_from_result(result)
+
+
+def _build_page_ocr(settings: Any | None) -> Any | None:
+    """按配置构造按页 OCR 引擎（parser_ocr_enabled 且 paddleocr 可用）。"""
+    if not bool(_cfg(settings, "parser_ocr_enabled", False)):
+        return None
+    if not PaddlePageOcr.available():
+        logger.info("[按页OCR] paddleocr 未安装，扫描页兜底关闭")
+        return None
+    try:
+        return PaddlePageOcr()
+    except Exception as exc:
+        logger.warning("[按页OCR] 引擎初始化失败，兜底关闭: %s", exc)
+        return None
+
+
+class TxtBackend:
+    """纯文本输入：读取后按既有章节规则包装为 DocumentIR。"""
+
+    name = "txt"
+
+    def is_available(self) -> bool:
+        return True
+
+    def parse(self, pdf_path: Path, *, report: PreflightReport | None = None) -> DocumentIR:
+        from .common_utils import remove_surrogates
+
+        try:
+            content = remove_surrogates(Path(pdf_path).read_text(encoding="utf-8", errors="replace"))
+        except OSError as exc:
+            return failed_ir(ERROR_CORRUPT, f"TXT 读取失败: {exc}", parser=self.name, report=report)
+        if not content.strip():
+            return failed_ir(ERROR_EMPTY, "TXT 文件为空", parser=self.name, report=report)
+        sections = split_text_into_sections(content)
+        return DocumentIR(
+            parser=self.name,
+            text=content.strip(),
+            sections=sections,
+            nodes=[],
+            report=report or PreflightReport(page_count=1, has_text_layer=True, parser_route="native"),
+        )
+
+
+class ImageOcrBackend:
+    """图片输入（.png/.jpg/...）：整图 OCR -> 章节化 DocumentIR。"""
+
+    name = "image-ocr"
+
+    def __init__(self, engine: Any | None = None) -> None:
+        self._engine = engine
+
+    def is_available(self) -> bool:
+        return self._engine is not None or PaddlePageOcr.available()
+
+    def parse(self, pdf_path: Path, *, report: PreflightReport | None = None) -> DocumentIR:
+        engine = self._engine or PaddlePageOcr()
+        lines = engine.image_lines(Path(pdf_path))
+        if not lines:
+            return failed_ir(ERROR_EMPTY, "图片 OCR 未识别到文本", parser=self.name, report=report)
+        text = "\n".join(lines)
+        sections = split_text_into_sections(text)
+        return DocumentIR(
+            parser=self.name,
+            text=text,
+            sections=sections,
+            nodes=[],
+            report=report or PreflightReport(page_count=1, has_text_layer=True, parser_route="scanned"),
+        )
+
+
+# ---------------------------------------------------------------------
 # Markdown / DOCX 通道（FileRouter 扩展）
 # ---------------------------------------------------------------------
 
@@ -1157,7 +1405,12 @@ def parse_any_document(file_path: Path, settings: Any | None = None) -> Document
         if not backend.is_available():
             return failed_ir(ERROR_CORRUPT, "DOCX 支持需要安装 python-docx", parser="docx")
         return backend.parse(path)
-    return failed_ir(ERROR_CORRUPT, f"不支持的文件类型: {suffix or '(无扩展名)'}，支持 PDF/Markdown/DOCX")
+    if suffix == ".txt":
+        return TxtBackend().parse(path)
+    if suffix in IMAGE_SUFFIXES:
+        return ImageOcrBackend().parse(path)
+    supported = "PDF / Markdown / DOCX / TXT / 图片(PNG/JPG)"
+    return failed_ir(ERROR_CORRUPT, f"不支持的文件类型: {suffix or '(无扩展名)'}，支持 {supported}")
 
 
 # ---------------------------------------------------------------------
@@ -1198,6 +1451,16 @@ class ParserRouter:
         self.config = RouterConfig.from_settings(settings)
         self._formula_recognizer = self._build_formula_recognizer(settings)
         self._layout_detector = self._build_layout_detector(settings)
+        self._page_ocr = _build_page_ocr(settings)
+        self._table_recognizer = self._build_table_recognizer(settings)
+
+    @staticmethod
+    def _build_table_recognizer(settings: Any | None) -> Any | None:
+        """按配置构造表格升级识别器（table_recognition=off 时返回 None）。"""
+        from .table_extraction import NullTableRecognizer, get_table_recognizer
+
+        recognizer = get_table_recognizer(settings)
+        return None if isinstance(recognizer, NullTableRecognizer) else recognizer
 
     @staticmethod
     def _build_layout_detector(settings: Any | None) -> Any | None:
@@ -1253,6 +1516,8 @@ class ParserRouter:
         pymupdf_backend = PyMuPDFBackend(
             formula_recognizer=self._formula_recognizer,
             layout_detector=self._layout_detector,
+            ocr_fallback=self._page_ocr,
+            table_recognizer=self._table_recognizer,
         )
         chain: list[ParserBackend] = []
 
@@ -1293,16 +1558,21 @@ class ParserRouter:
 __all__ = [
     "FORMULA_LINE_MIN_CHARS",
     "FORMULA_LINE_RATIO",
+    "IMAGE_SUFFIXES",
     "MATH_CHAR_RE",
+    "SUPPORTED_FILE_SUFFIXES",
     "DocxBackend",
+    "ImageOcrBackend",
     "MarkdownBackend",
     "MinerUBackend",
     "PaddleOCRBackend",
+    "PaddlePageOcr",
     "ParserBackend",
     "ParserRouter",
     "PyMuPDFBackend",
     "PypdfBackend",
     "RouterConfig",
+    "TxtBackend",
     "is_formula_text",
     "math_glyph_ratio",
     "parse_any_document",

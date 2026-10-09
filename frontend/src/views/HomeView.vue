@@ -45,7 +45,7 @@
           class="elegant-upload"
           drag
           :limit="1"
-          accept=".pdf,.md,.markdown,.docx"
+          accept=".pdf,.md,.markdown,.docx,.txt,.png,.jpg,.jpeg,.bmp,.webp"
           :before-upload="beforePaperUpload"
           :http-request="onUploadRequest"
         >
@@ -54,7 +54,7 @@
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             </div>
             <h3 class="upload-title">Drop your paper here</h3>
-            <p class="upload-desc">支持 PDF / Markdown / DOCX，单文件最大 50MB，双栏论文版式完整支持。</p>
+            <p class="upload-desc">支持 PDF / Markdown / DOCX / TXT / 图片，单文件最大 50MB，双栏论文版式完整支持。</p>
           </div>
         </el-upload>
 
@@ -170,13 +170,13 @@ const openTaskStream = (newTaskId) => {
   };
 };
 
-const SUPPORTED_UPLOAD_SUFFIXES = [".pdf", ".md", ".markdown", ".docx"];
+const SUPPORTED_UPLOAD_SUFFIXES = [".pdf", ".md", ".markdown", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".bmp", ".webp"];
 
 const beforePaperUpload = (file) => {
   // 前端扩展名守卫：与后端 SUPPORTED_UPLOAD_SUFFIXES 保持一致，给出即时友好提示。
   const name = (file?.name || "").toLowerCase();
   if (!SUPPORTED_UPLOAD_SUFFIXES.some((suffix) => name.endsWith(suffix))) {
-    ElMessage.error("仅支持上传 PDF / Markdown / DOCX 文件。");
+    ElMessage.error("仅支持上传 PDF / Markdown / DOCX / TXT / 图片（PNG/JPG）文件。");
     return false;
   }
   return true;

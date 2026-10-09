@@ -54,6 +54,39 @@ def parse_pdf_document(pdf_path: Path, settings: Any | None = None) -> DocumentI
     return ParserRouter(settings).parse(Path(pdf_path))
 
 
+# 统一输入接口层的返回结构
+class ParseMarkdownResult(dict):
+    """parse_to_markdown 的返回：markdown / ok / error 三字段（dict 便于序列化）。"""
+
+    @property
+    def markdown(self) -> str:
+        return str(self.get("markdown", ""))
+
+    @property
+    def ok(self) -> bool:
+        return bool(self.get("ok", False))
+
+    @property
+    def error(self) -> str:
+        return str(self.get("error", ""))
+
+
+def parse_to_markdown(file_path: Path, settings: Any | None = None) -> ParseMarkdownResult:
+    """【统一输入接口层】任意受支持文件 -> Markdown。
+
+    支持格式：PDF / Markdown / DOCX / TXT / 图片（.png/.jpg，走 OCR，需启用 paddleocr）。
+    质量优先路由：有文本层的内容绝不走 OCR（零识别误差 + 保住公式/表格/字号信息），
+    OCR 只兜底无文本的页与纯图片输入。失败返回 ok=False + error（不抛异常）。
+    """
+    try:
+        ir = parse_document(file_path, settings)
+    except Exception as exc:  # 统一出口不允许把异常漏给调用方
+        return ParseMarkdownResult({"ok": False, "error": f"解析异常: {exc}", "markdown": ""})
+    if not ir.ok:
+        return ParseMarkdownResult({"ok": False, "error": ir.error or ir.error_kind, "markdown": ""})
+    return ParseMarkdownResult({"ok": True, "error": "", "markdown": ir.to_markdown()})
+
+
 # ---------------------------------------------------------------------
 # 结构感知分块（Structure-aware Chunking）
 # ---------------------------------------------------------------------
@@ -270,6 +303,7 @@ __all__ = [
     "CN_HEADINGS",
     "EN_TO_CN_SECTION_MAP",
     "PAGE_MARK_RE",
+    "ParseMarkdownResult",
     "chunk_sections",
     "chunk_sections_with_meta",
     "chunk_text",
@@ -279,6 +313,7 @@ __all__ = [
     "parse_document",
     "parse_pdf_document",
     "parse_section_heading",
+    "parse_to_markdown",
     "split_content_units",
     "split_text_into_sections",
 ]

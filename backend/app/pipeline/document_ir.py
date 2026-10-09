@@ -142,6 +142,48 @@ class DocumentIR:
             error_kind=str(data.get("error_kind", ERROR_NONE)),
         )
 
+    def to_markdown(self) -> str:
+        """渲染为统一 Markdown（文档级元数据头 + 章节正文）。
+
+        章节内容本身已是 Markdown 片段（## 标题 / $$LaTeX$$ / | 表格 |），
+        这里只做拼装：GROBID 元数据（若有）作为 front-matter 头部，
+        figure 节点的图片描述（若有）附在文末图表附录。
+        """
+        parts: list[str] = []
+        meta = self.metadata or {}
+        if meta:
+            header = ["---"]
+            for key in ("title", "doi"):
+                if meta.get(key):
+                    header.append(f"{key}: {meta[key]}")
+            authors = meta.get("authors") or []
+            if authors:
+                header.append(f"authors: {', '.join(authors)}")
+            header.append("---")
+            parts.append("\n".join(header))
+
+        for title, content in self.sections:
+            heading = title if title.strip().startswith("#") else f"## {title}"
+            parts.append(heading)
+            parts.append(content or "")
+
+        figure_notes = [n for n in self.nodes if n.type == "figure" and n.text.strip()]
+        if figure_notes:
+            parts.append("## 图表附录")
+            for node in figure_notes:
+                caption = node.caption or "未命名图表"
+                parts.append(f"- **{caption}**（第 {node.page} 页）：{node.text.strip()}")
+
+        table_notes = [n for n in self.nodes if n.type == "table" and n.text.strip()]
+        if table_notes:
+            parts.append("## 表格")
+            for node in table_notes:
+                source = (node.meta or {}).get("source", "vector")
+                caption = node.caption or f"表格（第 {node.page} 页，{source}）"
+                parts.append(f"**{caption}**\n\n{node.text.strip()}")
+
+        return "\n\n".join(p for p in parts if p).strip() + "\n"
+
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self.to_dict(), ensure_ascii=False), encoding="utf-8")

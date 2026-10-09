@@ -21,7 +21,7 @@
 
 **Agent Paper Distiller** is a full-stack research workspace for academic paper distillation.
 
-Upload a paper (PDF / Markdown / DOCX), choose an extraction template (Skill), and the system runs parse → translate → summarize → improve. A dual-pane workspace keeps the original PDF beside generated Markdown (with LaTeX), while RAG chat and deep search let you ask follow-up questions with live sources and HITL checkpoints.
+Upload a paper (PDF / Markdown / DOCX / TXT / image), choose an extraction template (Skill), and the system runs parse → translate → summarize → improve. Any supported input funnels through one interface (`parse_to_markdown`) that renders a unified Markdown document; pages without a text layer fall back to per-page OCR instead of failing. A dual-pane workspace keeps the original PDF beside generated Markdown (with LaTeX), while RAG chat and deep search let you ask follow-up questions with live sources and HITL checkpoints.
 
 Built with **Vue 3** + **FastAPI**, powered by a production **AgentLoop** runtime (tools, sandbox, sub-agents) and a paper pipeline orchestrator.
 
@@ -89,7 +89,8 @@ vlm_mode=sync                  # sync (wait in pipeline) | async (background: in
 vector_store_mode=local        # local (embedded) | server (standalone Chroma, set VECTOR_SERVER_URL)
 vector_collection_versioned=false  # isolate collections per embedding model + schema version
 grobid_enabled=false           # scholarly metadata enrichment (title/authors/DOI/references)
-translation_provider=auto      # auto | llm | google (LLM keeps $...$ LaTeX intact)
+table_recognition=off          # off | vlm: borderless/image tables escalate from vector extraction to VLM -> Markdown
+translation_provider=auto      # auto | llm | google (LLM keeps $...$ LaTeX intact; circuit-breaker degrades to Google after repeated LLM failures)
 ```
 
 Re-uploading the same file (content-level SHA256) reuses the stored parse artifact instead of re-parsing; Mathpix results are cached by image hash to avoid duplicate billing.

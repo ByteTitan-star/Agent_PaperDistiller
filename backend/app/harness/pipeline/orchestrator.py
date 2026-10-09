@@ -135,10 +135,13 @@ async def translate_sections_smart(
 
     if provider in {"llm", "auto"} and llm_ready:
         try:
-            from ...pipeline.llm_translator import translate_sections_llm
+            from ...pipeline.llm_translator import TranslationCircuitOpenError, translate_sections_llm
 
             translated, failures = await translate_sections_llm(sections, target_language, settings)
             return translated, failures, "llm"
+        except TranslationCircuitOpenError as exc:
+            # 熔断打开：无论 llm 还是 auto 模式都直接降级 Google（熔断的意义就是快速失败）
+            logger.warning("[翻译] ⚡ LLM 熔断中，本批降级 Google: %s", exc)
         except Exception as exc:
             logger.warning("[翻译] ⚠️ LLM 通道不可用，回退 Google: %s", exc)
             if provider == "llm":
@@ -212,6 +215,12 @@ async def run_parse_step(
         section_pages,
     )
     await _job_transition(paper_id, task_id, "EMBEDDING")
+    # 表格节点入检索块（矢量表格/模型升级表格均带 source 标记，闭环保检索）
+    for node in ir.nodes:
+        if node.type == "table" and node.text.strip():
+            caption = node.caption or ""
+            chunks.append(f"[表格 Page {node.page}] {caption}\n{node.text.strip()}".strip())
+            metas.append({"element_type": "table", "section": "表格", "page": node.page, "is_reference": False})
     await asyncio.to_thread(storage.save_chunks, paper_id, chunks, metas)
     await asyncio.to_thread(storage.save_parse_artifact, paper_id, ir)
     await _job_transition(paper_id, task_id, "INDEXED")
