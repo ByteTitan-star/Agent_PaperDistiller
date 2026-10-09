@@ -762,7 +762,7 @@ class Storage:
         )
         return output_pdf
 
-    SUPPORTED_SOURCE_SUFFIXES = (".pdf", ".md", ".markdown", ".docx")
+    SUPPORTED_SOURCE_SUFFIXES = (".pdf", ".md", ".markdown", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".bmp", ".webp")
 
     def source_path(self, paper_id: str) -> Path:
         """

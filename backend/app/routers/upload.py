@@ -21,7 +21,7 @@ router = APIRouter(tags=["upload"])
 settings = get_settings()
 
 # 支持的上传类型（与 storage.SUPPORTED_SOURCE_SUFFIXES 保持一致）
-SUPPORTED_UPLOAD_SUFFIXES = (".pdf", ".md", ".markdown", ".docx")
+SUPPORTED_UPLOAD_SUFFIXES = (".pdf", ".md", ".markdown", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".bmp", ".webp")
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -40,7 +40,7 @@ async def upload_pdf(
     if not file.filename or not file.filename.lower().endswith(SUPPORTED_UPLOAD_SUFFIXES):
         raise HTTPException(
             status_code=400,
-            detail="仅支持上传 PDF / Markdown / DOCX 文件。",
+            detail="仅支持上传 PDF / Markdown / DOCX / TXT / 图片（PNG/JPG）文件。",
         )
 
     from ..dependencies import storage
