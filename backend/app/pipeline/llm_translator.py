@@ -19,6 +19,69 @@ from .translator import normalize_language_code, split_for_translation
 
 logger = logging.getLogger(__name__)
 
+
+class TranslationCircuitOpenError(Exception):
+    """LLM 翻译熔断中（连续失败达到阈值），调用方应降级到 Google 通道。"""
+
+
+class CircuitBreaker:
+    """LLM 翻译熔断器：closed -> open（连续 N 次失败）-> 冷却后 half-open 放行试探。
+
+    - 单事件循环内使用（翻译在 to_thread/async 中调用，属性访问足够安全）；
+    - 进程级单例 _TRANSLATION_BREAKER 跨请求共享状态，成功一次即闭合。
+    """
+
+    def __init__(self, failure_threshold: int = 3, cooldown_sec: float = 60.0) -> None:
+        self.failure_threshold = max(1, failure_threshold)
+        self.cooldown_sec = max(1.0, cooldown_sec)
+        self._consecutive_failures = 0
+        self._opened_at: float | None = None
+
+    def allow(self) -> bool:
+        """是否放行调用：closed 放行；open 且冷却未过拦截；冷却过后放行（half-open 试探）。"""
+        if self._opened_at is None:
+            return True
+        import time
+
+        # half-open：冷却过后放一次试探请求
+        return time.monotonic() - self._opened_at >= self.cooldown_sec
+
+    def record_success(self) -> None:
+        self._consecutive_failures = 0
+        self._opened_at = None
+
+    def record_failure(self) -> bool:
+        """记录一次失败；返回熔断是否刚刚打开。
+
+        达到阈值即刷新冷却计时（含 half-open 试探失败：重新进入完整冷却，
+        防止冷却窗口滑过后无限放行）。
+        """
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self.failure_threshold:
+            import time
+
+            just_opened = self._opened_at is None or time.monotonic() - self._opened_at >= self.cooldown_sec
+            self._opened_at = time.monotonic()
+            if just_opened:
+                logger.warning(
+                    "[LLM翻译] ⚠️ 熔断打开：连续失败 %d 次，%ds 内直接降级 Google",
+                    self._consecutive_failures,
+                    int(self.cooldown_sec),
+                )
+            return just_opened
+        return False
+
+    @property
+    def state(self) -> str:
+        if self._opened_at is None:
+            return "closed"
+        return "open" if not self.allow() else "half-open"
+
+
+# 进程级熔断器（跨请求共享；阈值/冷却可由配置覆盖，见 translate_sections_llm）
+_TRANSLATION_BREAKER = CircuitBreaker()
+
+
 SYSTEM_PROMPT = """You are a professional academic paper translation engine.
 Translate the user's text into {language}.
 Rules (MUST follow):
@@ -126,6 +189,12 @@ async def translate_sections_llm(
     if not api_key or api_key == "your-api-key":
         raise RuntimeError("LLM 翻译需要配置 deepseek_api_key")
 
+    # 熔断参数由配置注入进程级单例
+    _TRANSLATION_BREAKER.failure_threshold = max(1, int(_cfg(settings, "translation_breaker_threshold", 3)))
+    _TRANSLATION_BREAKER.cooldown_sec = max(1.0, float(_cfg(settings, "translation_breaker_cooldown_sec", 60.0)))
+    if not _TRANSLATION_BREAKER.allow():
+        raise TranslationCircuitOpenError(f"LLM 翻译熔断中（state={_TRANSLATION_BREAKER.state}），剩余片段降级 Google")
+
     language_name = _language_display_name(target_language)
     client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
     semaphore = asyncio.Semaphore(concurrency)
@@ -147,10 +216,17 @@ async def translate_sections_llm(
                 for piece in pieces:
                     if not piece.strip():
                         continue
+                    if not _TRANSLATION_BREAKER.allow():
+                        # 批内开路：剩余片段不再请求 LLM，回退原文并计入失败（由上层降级 Google 重翻）
+                        failures += 1
+                        results.append(piece)
+                        continue
                     try:
                         results.append(await _translate_piece(client, model, piece, language_name, temperature=0.1))
+                        _TRANSLATION_BREAKER.record_success()
                     except Exception as exc:
                         failures += 1
+                        _TRANSLATION_BREAKER.record_failure()
                         logger.warning("[LLM翻译] ⚠️ 段落翻译失败，回退原文: %s", exc)
                         results.append(piece)
         return title, "\n\n".join(results).strip()
@@ -181,4 +257,10 @@ def _split_table_for_llm(table: str, max_chars: int) -> list[str]:
     return pieces
 
 
-__all__ = ["SYSTEM_PROMPT", "translate_sections_llm", "translate_text_llm"]
+__all__ = [
+    "SYSTEM_PROMPT",
+    "CircuitBreaker",
+    "TranslationCircuitOpenError",
+    "translate_sections_llm",
+    "translate_text_llm",
+]
