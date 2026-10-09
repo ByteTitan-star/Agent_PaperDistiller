@@ -2,6 +2,28 @@
 
 Agent Paper Distiller 的版本演进记录。
 
+## v5.1.0 — 2026-10-09
+
+**统一输入层、表格升级链与翻译韧性。**
+
+### Phase 12 · 统一 any-to-markdown 输入
+
+- `parse_to_markdown()` 单一入口：任意受支持源渲染为统一 Markdown（front-matter + 章节 + 图表/表格附录），失败返回 `{ok, error}` 不抛异常
+- 新增输入格式：TXT（直读）与图片 PNG/JPG/BMP/WEBP（整图 OCR，引擎可注入）；上传路由、storage、前端选择器同步接受
+- 按页 OCR 兜底：原生文档内嵌扫描页仅对该页 OCR，其余页保持无损文本层（刻意不做整档 OCR）
+- LLM 翻译熔断：连续失败打开熔断（阈值/冷却可配），批内剩余片段不再请求 LLM，严格 llm 模式下也降级 Google；半开试探冷却后重试（修复了时间戳陈旧导致熔断持续放行的 bug）
+
+### Phase 13 · 表格提取升级链
+
+- `table_quality_report()` 门禁矢量网格（行列/填充率/一致率），拦截无框线表格误抽碎片
+- 门禁失败仅升级该区域（TableStructureRecognizer；`table_recognition=vlm` 复用 qwen key）；无识别器时保留矢量结果并标记 `vector_low_quality`
+- 版面检出但矢量未覆盖的表格区域（无框线/图片表格）走同一升级路径，产出 `source=model` 节点
+- 表格检索闭环：全文回填、`to_markdown()` 表格节、索引时 `element_type=table` 块（此前表格对 RAG 不可见）
+
+### 验证
+
+- 227 个单元测试（原 202），ruff/mypy 干净；E2E：单页框线表格（矢量）+ 图片表格（模型升级）解析为一份 Markdown
+
 ## v5.0.0 — 2026-09-15
 
 **文档摄取管线 —— 统一 Document IR、分层解析器、本地公式识别、阶段状态机。**

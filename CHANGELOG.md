@@ -2,6 +2,28 @@
 
 All notable releases of Agent Paper Distiller.
 
+## v5.1.0 — 2026-10-09
+
+**Unified input layer, table escalation chain and translation resilience.**
+
+### Phase 12 · Unified any-to-markdown input
+
+- `parse_to_markdown()` single entrypoint: any supported source renders one Markdown document (front-matter + sections + figure/table appendices), failures return `{ok, error}` instead of raising
+- New sources: TXT (direct read) and images PNG/JPG/BMP/WEBP (whole-image OCR, injectable engine); upload route, storage and the frontend picker accept them
+- Per-page OCR fallback: native documents with embedded scan pages recover only those pages; every other page keeps its lossless text layer (whole-file OCR deliberately avoided)
+- LLM translation circuit breaker: consecutive failures open the circuit (configurable threshold/cooldown), remaining pieces stop hitting the LLM and the orchestrator degrades to Google even in strict llm mode; half-open probes retry after cooldown (fixed a stale-timestamp bug that kept the breaker permissive)
+
+### Phase 13 · Table extraction escalation
+
+- `table_quality_report()` gates vector grids (rows/cols, cell fill, column consistency) and rejects borderless-table debris
+- Failed gates escalate only that region through a TableStructureRecognizer (VLM via `table_recognition=vlm`, reusing the qwen key); without a recognizer the vector result stays tagged `vector_low_quality`
+- Layout-detected table regions not covered by vector extraction (borderless/image tables) escalate through the same path as `source=model` nodes
+- Tables close the retrieval loop: page-text backfill, a dedicated `to_markdown()` section and `element_type=table` chunks at indexing (tables were previously invisible to RAG)
+
+### Verification
+
+- 227 unit tests (up from 202), ruff/mypy clean; E2E: one page holding a ruled table (vector) and an image table (model escalation) parses into a single Markdown document
+
 ## v5.0.0 — 2026-09-15
 
 **Document ingestion pipeline — canonical Document IR, layered parsers, local formula recognition, staged jobs.**
