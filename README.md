@@ -1,7 +1,7 @@
 <h1 align="center">⚗️ Agent Paper Distiller</h1>
 
 <p align="center">
-  <a href="https://github.com/ByteTitan-star/Agent_PaperDistiller/releases/tag/v5.0.0"><img src="https://img.shields.io/badge/PaperDistiller-v5.0.0-6e40c9" alt="PaperDistiller v5.0.0" /></a>
+  <a href="https://github.com/ByteTitan-star/Agent_PaperDistiller/releases/tag/v5.1.0"><img src="https://img.shields.io/badge/PaperDistiller-v5.1.0-6e40c9" alt="PaperDistiller v5.1.0" /></a>
   <img src="https://img.shields.io/badge/python-3.12-3776AB" alt="Python 3.12" />
   <img src="https://img.shields.io/badge/Vue-3-42b883" alt="Vue 3" />
   <img src="https://img.shields.io/badge/FastAPI-009688" alt="FastAPI" />
@@ -172,7 +172,7 @@ UI_figures/       # Product screenshots
 
 ## Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md) for release history (`v1.0` → `v5.0.0`).
+See [CHANGELOG.md](./CHANGELOG.md) for release history (`v1.0` → `v5.1.0`).
 
 ## License
 
