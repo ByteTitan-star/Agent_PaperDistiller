@@ -136,6 +136,25 @@ Review 发现的缺口逐项补齐（公式链路闭环为其中最大一项）�
 - [x] **11.3 VLM 后台异步化（`vlm_mode=sync|async`）**：async 时 `schedule_figure_step_async` 转进程内后台任务——上传秒级完成解析入库，描述异步补全（回写产物 + image_desc 检索块）；silent 模式不打扰已完成的主任务状态；同 paper 未完成任务期间重复调度去重（防重复计费）；后台失败只告警不传播。调度器接口与 Redis 队列版（roadmap 改进 6）对齐，后续可平滑换实现。
 - [x] **11.4 验证**：200 个单测全绿（+10：版本化命名 2 / fake-chromadb 客户端模式 5 / VLM 异步立即返回+补全+去重+失败吞掉 3）；ruff 干净；mypy 无新增（存量 7 个 Optional 收窄问题）。
 
+## Phase 12 — 统一输入接口层 + 翻译熔断降级
+
+- [x] **12.1 统一输入出口 `parse_to_markdown`**：任意受支持文件 -> Markdown（ok/error/markdown 三字段，失败不抛异常）。`DocumentIR.to_markdown()` 渲染：GROBID 元数据 front-matter + 章节（含 $$LaTeX$$/表格）+ 图表附录（VLM 描述）。
+- [x] **12.2 混合文档按页 OCR 兜底**：原生文档内的无文本层页（嵌入扫描页/图片页）自动单页 OCR 补全，其余页仍走无损文本层（引擎可注入；未启用只告警不失败）。全档 OCR 的方案被否决：文本层抽取更快且零识别误差，OCR 是兜底不是快车道。
+- [x] **12.3 输入格式扩展**：TXT（直读）+ 图片 PNG/JPG/BMP/WEBP（整图 OCR 通道）；上传路由、storage 后缀、前端 accept 同步扩展。
+- [x] **12.4 翻译熔断器**：`CircuitBreaker`（closed -> open[连续 N 失败] -> 冷却后半开试探，试探失败重新计时——修掉了 half-open 失败不刷新计时的 bug）；批内开路后剩余片段不再请求 LLM；orchestrator 在 llm 严格模式下熔断也直接降级 Google（快速失败）。配置：`translation_breaker_threshold=3` / `translation_breaker_cooldown_sec=60`。
+- [x] **12.5 验证**：215 个单测全绿（+13：统一出口各格式/元数据+图表附录渲染/后缀注册表/图片 fake 引擎/TXT 空文件/混合页 OCR 兜底与未启用告警/熔断状态机+批内降级+严格模式降级）；E2E 冒烟：混合 PDF（文本层+扫描页）单次解析出完整 Markdown、熔断降级 Google 生效。
+
+## Phase 13 — 表格提取升级链（置信度门控 + 逐元素升级）
+
+- [x] **13.1 质量门禁（`table_extraction.table_quality_report`，纯函数）**：矢量表格网格健全性检查——行列数、单元格填充率（≥0.35）、行列一致率（≥0.6），拦截 find_tables 对无框线表格的典型误抽（一维碎片/错位网格）。
+- [x] **13.2 升级链（生产模式：逐元素、绝不逐页切换）**：
+      - 矢量低质量 -> 裁剪该区域 -> TableStructureRecognizer 转 Markdown（无识别器时保留矢量结果并标记 `vector_low_quality`，不丢数据）；
+      - 版面检测出 `table` 区域但矢量未覆盖（IoU<0.3，即无框线/图片表格）-> 同一升级路径，节点 `source: model, escalated: true`；
+      - 表格节点统一带 `source: vector | model | vector_low_quality` 可观测标记。
+- [x] **13.3 VLM 识别器（`table_recognition=off|vlm`，复用 qwen key）**：区域裁剪 -> qwen-vl 转 Markdown 表格（prompt 约束保行保列不造格）；同步接口带线程安全包装（worker 线程 asyncio.run / 事件循环线程转独立线程）。
+- [x] **13.4 检索闭环**：表格 Markdown 按页回填全文（extra_page_blocks）；`to_markdown()` 输出「表格」节（题注 + source）；orchestrator 将表格节点追加为 `element_type=table` 检索块（此前矢量表格只进节点不进 chunks 的缺口一并修复）。
+- [x] **13.5 验证**：227 个单测全绿（+12：门禁纯函数 3 / 门控 1 / 框线矢量+低质量升级+无识别器保留 3 / 检测区域升级+重叠跳过+未启用告警 3 / to_markdown 表格节+orchestrator chunk 2）；E2E：单页框线表格（vector）+ 图片型表格（model 升级）同页并存，均进入统一 Markdown。
+
 ## 后续迭代
 
 - 存量数据库迁移：`ALTER TABLE user_api_configs ADD COLUMN pipeline_prefs TEXT` + `CREATE TABLE document_jobs`（init.sql 已覆盖新装环境）

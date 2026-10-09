@@ -124,11 +124,17 @@ def test_parse_any_document_dispatches_by_suffix(tmp_path: Path) -> None:
     ir_docx = parse_any_document(docx_path)
     assert ir_docx.ok is True and ir_docx.parser == "docx"
 
-    bad = tmp_path / "doc.txt"
+    bad = tmp_path / "doc.xyz"
     bad.write_text("plain", encoding="utf-8")
     ir_bad = parse_any_document(bad)
     assert ir_bad.ok is False
     assert "不支持的文件类型" in ir_bad.error
+
+    # TXT 现为受支持格式（统一输入层）
+    txt = tmp_path / "doc.txt"
+    txt.write_text("plain text body", encoding="utf-8")
+    ir_txt = parse_any_document(txt)
+    assert ir_txt.ok is True and ir_txt.parser == "txt"
 
 
 def test_parse_document_entrypoint(tmp_path: Path) -> None:
